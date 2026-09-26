@@ -347,4 +347,10 @@ actual install still comes from the tarball path.
 
 ---
 
+## Acknowledgments
+
+modelrelay was originally created by [Rolando Rojas](https://github.com/rolandorojas) at [ellipticmarketing/modelrelay](https://github.com/ellipticmarketing/modelrelay). This fork continues active maintenance and development building on that original work.
+
+---
+
 ⭐️ If you find modelrelay useful, please consider [starring the repo](https://github.com/gschaetz/modelrelay)!
