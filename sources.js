@@ -20,6 +20,7 @@ export const MODEL_ID_ALIASES = {
   'gemma3:12b': 'gemma-3-12b-it',
   'gemma3:27b': 'gemma-3-27b-it',
   'glm-4.7': 'z-ai/glm4.7',
+  'zai-glm-4.7': 'z-ai/glm4.7',
   'glm-4.6': 'glm-4.6',
   'glm-5': 'z-ai/glm5',
   'glm-5.2': 'z-ai/glm-5.2',
@@ -30,6 +31,12 @@ export const MODEL_ID_ALIASES = {
   'kimi-k2.7-code': 'moonshotai/kimi-k2.7-code',
   'kimi-k2:1t': 'moonshotai/kimi-k2-instruct',
   'deepseek-v4-flash-free': 'deepseek-v4-flash',
+  'deepseek-v4-flash:0731': 'deepseek/deepseek-v4-flash-0731',
+  'inclusionai/ling-3.0-flash:free': 'inclusionai/ling-3.0-flash',
+  'kimi-k3': 'moonshotai/kimi-k3',
+  'laguna-s-2.1-free': 'poolside/laguna-s-2.1',
+  'ling-3.0-flash-free': 'inclusionai/ling-3.0-flash',
+  'poolside/laguna-s-2.1:free': 'poolside/laguna-s-2.1',
   'hy3-free': 'tencent/hy3',
   'inclusionai/ring-2.6-1t:free': 'inclusionai/ring-2.6-1t',
   'inclusionai/ling-2.6-flash:free': 'inclusionai/ling-2.6-flash',
@@ -101,11 +108,17 @@ export const MODEL_LABEL_OVERRIDES = {
   'kimi-k2.5': 'Kimi K2.5',
   'kimi-k2.6': 'Kimi K2.6',
   'kimi-k2.7-code': 'Kimi K2.7 Code',
+  'kimi-k3': 'Kimi K3',
+  'moonshotai/kimi-k3': 'Kimi K3',
   'moonshotai/kimi-k2.6': 'Kimi K2.6',
   'kimi-k2:1t': 'Kimi K2 Instruct',
   'inclusionai/ling-2.6-flash': 'Ling 2.6 Flash',
   'inclusionai/ling-2.6-flash:free': 'Ling 2.6 Flash',
   'ling-2.6-flash-free': 'Ling 2.6 Flash',
+  'inclusionai/ling-3.0-flash': 'Ling 3.0 Flash',
+  'ling-3.0-flash-free': 'Ling 3.0 Flash',
+  'poolside/laguna-s-2.1': 'Laguna S 2.1',
+  'laguna-s-2.1-free': 'Laguna S 2.1',
   'mimo-v2-flash-free': 'MiMo V2 Flash',
   'mimo-v2-pro-free': 'MiMo V2 Omni Pro',
   'mimo-v2-omni-free': 'MiMo V2 Omni',
@@ -202,6 +215,8 @@ export const sources = {
   "nvidia": {
     "name": "NIM",
     "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+    "contextUrl": "https://build.nvidia.com/models",
+    "discoverable": true,
     "models": [
       ["z-ai/glm-5.2", "GLM 5.2", "200k"],
       ["moonshotai/kimi-k2.7-code", "Kimi K2.7 Code", "262k"],
@@ -257,10 +272,12 @@ export const sources = {
   "groq": {
     "name": "Groq",
     "url": "https://api.groq.com/openai/v1/chat/completions",
+    "contextUrl": "https://console.groq.com/docs/models",
+    "discoverable": true,
     "models": [
       ["llama-3.3-70b-versatile", "Llama 3.3 70B", "128k"],
-      ["meta-llama/llama-4-scout-17b-16e-preview", "Llama 4 Scout", "10M"],
-      ["meta-llama/llama-4-maverick-17b-128e-preview", "Llama 4 Maverick", "1M"],
+      ["meta-llama/llama-4-scout-17b-16e-preview", "Llama 4 Scout", "128k"],
+      ["meta-llama/llama-4-maverick-17b-128e-preview", "Llama 4 Maverick", "128k"],
       ["deepseek-r1-distill-llama-70b", "R1 Distill 70B", "128k"],
       ["qwen-qwq-32b", "QwQ 32B", "131k"],
       ["moonshotai/kimi-k2-instruct", "Kimi K2 Instruct", "131k"],
@@ -273,14 +290,22 @@ export const sources = {
   "cerebras": {
     "name": "Cerebras",
     "url": "https://api.cerebras.ai/v1/chat/completions",
+    "contextUrl": "https://api.cerebras.ai/public/v1/models?format=openrouter",
+    "discoverable": true,
     "models": [
-      ["llama3.3-70b", "Llama 3.3 70B", "128k"],
-      ["llama-4-scout-17b-16e-instruct", "Llama 4 Scout", "10M"],
-      ["qwen-3-32b", "Qwen3 32B", "128k"],
-      ["gpt-oss-120b", "GPT OSS 120B", "128k"],
-      ["qwen-3-235b-a22b", "Qwen3 235B", "128k"],
+      // Cerebras' own /v1/models?format=openrouter reports context_length: 131072 for this
+      // model, and their docs claim 64k on the free tier -- but the live account this project
+      // actually uses (likely on a more restrictive "Free Trial" tier, not full "Free") gets
+      // hard-rejected by the real API at 8192 tokens: "Please reduce the length of the messages
+      // or completion. Current length is 23592 while limit is 8192" (confirmed live 2026-08-07,
+      // this is what a real openclaw-sandbox request hit via auto-fastest+min_ctx:32000 -- the
+      // min_ctx filter can only work if this catalog value reflects what actually gets accepted,
+      // not the model's advertised maximum). If the account tier ever changes, re-verify before
+      // raising this.
+      ["zai-glm-4.7", "GLM 4.7", "8192"],
       ["llama3.1-8b", "Llama 3.1 8B", "128k"],
-      ["glm-4.6", "GLM 4.6", "128k"]
+      ["qwen-3-235b-a22b-instruct-2507", "Qwen3 235B", "128k"],
+      ["gpt-oss-120b", "GPT OSS 120B", "128k"]
     ]
   },
   "opencode": {
@@ -301,6 +326,7 @@ export const sources = {
   "openrouter": {
     "name": "OpenRouter",
     "url": "https://openrouter.ai/api/v1/chat/completions",
+    "contextUrl": "https://openrouter.ai/api/v1/models",
     "models": [
       ["qwen/qwen3-coder:free", "Qwen3 Coder", "256k"],
       ["xiaomi/mimo-v2-pro:free", "MiMo V2 Omni Pro", "1M"],
@@ -309,8 +335,8 @@ export const sources = {
       ["deepseek/deepseek-r1-0528:free", "DeepSeek R1 0528", "128k"],
       ["qwen/qwen3-next-80b-a3b-instruct:free", "Qwen3 80B Instruct", "128k"],
       ["openai/gpt-oss-120b:free", "GPT OSS 120B", "128k"],
-      ["openai/gpt-oss-20b:free", "GPT OSS 20B", "128k"],
-      ["nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron Nano 30B", "128k"],
+      ["openai/gpt-oss-20b:free", "GPT OSS 20B", "131072"],
+      ["nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron Nano 30B", "256k"],
       ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B", "128k"],
       ["minimax/minimax-m2.5:free", "MiniMax M2.5", "128k"],
       ["corethink:free", "CoreThink", "128k"],
@@ -320,6 +346,7 @@ export const sources = {
   "codestral": {
     "name": "Codestral",
     "url": "https://codestral.mistral.ai/v1/chat/completions",
+    "contextUrl": "https://docs.mistral.ai/getting-started/models/models_overview/",
     "models": [
       ["codestral-latest", "Codestral", "256k"]
     ]
@@ -327,19 +354,22 @@ export const sources = {
   "scaleway": {
     "name": "Scaleway",
     "url": "https://api.scaleway.ai/v1/chat/completions",
+    "contextUrl": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/",
+    "discoverable": true,
     "models": [
-      ["devstral-2-123b-instruct-2512", "Devstral 2 123B", "256k"],
-      ["qwen3-235b-a22b-instruct-2507", "Qwen3 235B", "128k"],
+      ["devstral-2-123b-instruct-2512", "Devstral 2 123B", "200k"],
+      ["qwen3-235b-a22b-instruct-2507", "Qwen3 235B", "250k"],
       ["gpt-oss-120b", "GPT OSS 120B", "128k"],
-      ["qwen3-coder-30b-a3b-instruct", "Qwen3 Coder 30B", "32k"],
-      ["llama-3.3-70b-instruct", "Llama 3.3 70B", "128k"],
-      ["deepseek-r1-distill-llama-70b", "R1 Distill 70B", "128k"],
+      ["qwen3-coder-30b-a3b-instruct", "Qwen3 Coder 30B", "128k"],
+      ["llama-3.3-70b-instruct", "Llama 3.3 70B", "100k"],
+      ["deepseek-r1-distill-llama-70b", "R1 Distill 70B", "16k"],
       ["mistral-small-3.2-24b-instruct-2506", "Mistral Small 3.2", "128k"]
     ]
   },
   "kilocode": {
     "name": "KiloCode",
     "url": "https://api.kilo.ai/api/gateway/chat/completions",
+    "contextUrl": "https://api.kilo.ai/api/gateway/models",
     "models": [
       ["arcee-ai/trinity-large-preview", "Trinity Large", "128k"]
     ]
@@ -347,6 +377,7 @@ export const sources = {
   "kiro": {
     "name": "Kiro",
     "url": "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
+    "contextUrl": "https://kiro.dev/docs/cli/reference/models/",
     "models": [
       ["claude-sonnet-4.5", "Claude Sonnet 4.5", "200k"],
       ["claude-haiku-4.5", "Claude Haiku 4.5", "200k"]
@@ -355,6 +386,8 @@ export const sources = {
   "googleai": {
     "name": "Google AI",
     "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "contextUrl": "https://ai.google.dev/gemma/docs/core/model_card_3",
+    "discoverable": true,
     "models": [
       ["gemma-3-27b-it", "Gemma 3 27B", "128k"],
       ["gemma-3-12b-it", "Gemma 3 12B", "128k"],
@@ -369,7 +402,7 @@ function buildModels() {
     for (const m of provider.models) {
       const [modelId, label, ctx] = m
       const intell = getScore(modelId)
-      result.push([modelId, label, intell, ctx, providerKey])
+      result.push([modelId, label, intell, ctx, providerKey, ctx ? 'curated' : null, ctx ? provider.contextUrl || null : null])
     }
   }
   return result

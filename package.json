@@ -1,6 +1,6 @@
 {
-  "name": "modelrelay",
-  "version": "1.18.0",
+  "name": "@schaetzkc/modelrelay",
+  "version": "1.23.0",
   "description": "OpenAI-compatible local router that benchmarks free coding models across providers and forwards requests to the best available model.",
   "keywords": [
     "nvidia",
@@ -23,16 +23,16 @@
     "openai",
     "api"
   ],
-  "homepage": "https://github.com/modelrelay#readme",
+  "homepage": "https://github.com/gschaetz/modelrelay#readme",
   "bugs": {
-    "url": "https://github.com/modelrelay/issues"
+    "url": "https://github.com/gschaetz/modelrelay/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/modelrelay.git"
+    "url": "git+https://github.com/gschaetz/modelrelay.git"
   },
   "license": "MIT",
-  "author": "anonymous",
+  "author": "Gary Schaetz",
   "type": "module",
   "main": "bin/modelrelay.js",
   "bin": {
@@ -44,6 +44,7 @@
     "public/",
     "sources.js",
     "scores.js",
+    "tags.js",
     "README.md",
     "LICENSE"
   ],

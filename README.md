@@ -1,7 +1,7 @@
 # 🚀 modelrelay
 
-[![npm version](https://img.shields.io/npm/v/modelrelay?color=green&style=flat-square)](https://npmjs.com/package/modelrelay)
-[![GitHub stars](https://img.shields.io/github/stars/ellipticmarketing/modelrelay?style=flat-square)](https://github.com/ellipticmarketing/modelrelay/stargazers)
+[![npm version](https://img.shields.io/npm/v/%40schaetzkc%2Fmodelrelay?color=green&style=flat-square)](https://npmjs.com/package/@schaetzkc/modelrelay)
+[![GitHub stars](https://img.shields.io/github/stars/gschaetz/modelrelay?style=flat-square)](https://github.com/gschaetz/modelrelay/stargazers)
 [![Join Discord](https://img.shields.io/badge/Join_Discord-5865F2?style=flat-square&logo=discord)](https://discord.gg/AqX6Sawq5w)
 
 [**Join our Discord**](https://discord.gg/AqX6Sawq5w) for discussions, feature requests, and community support.
@@ -29,7 +29,7 @@
 ## 🚀 Install via NPM
 
 ```bash
-npm install -g modelrelay
+npm install -g @schaetzkc/modelrelay
 
 # Start it
 modelrelay
@@ -55,8 +55,8 @@ mkdir modelrelay
 
 cd modelrelay
 
-curl -fsSL -o Dockerfile https://raw.githubusercontent.com/ellipticmarketing/modelrelay/master/Dockerfile
-curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/ellipticmarketing/modelrelay/master/docker-compose.yml
+curl -fsSL -o Dockerfile https://raw.githubusercontent.com/gschaetz/modelrelay/master/Dockerfile
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/gschaetz/modelrelay/master/docker-compose.yml
 
 docker compose up -d --build
 ```
@@ -178,6 +178,8 @@ modelrelay config export | modelrelay config import
 - Use `model: "auto-fastest"` to route to the best model overall
 - Use a grouped model ID such as `minimax-m2.5`, `kimi-k2.5`, or `glm4.7` to route within that model group
 - For grouped IDs, modelrelay selects the provider with the best current QoS for that group
+- Use `model: "tag:<name>"` (e.g. `tag:coding`) to route to the best currently available model carrying that tag — either a curated capability tag or a custom tag you've assigned in the Web UI (see [Model tags](#model-tags)). This is useful because the free models behind modelrelay come and go as availability changes — routing by tag survives a given model disappearing, where routing by a specific model/group ID does not.
+- Append `+min_ctx:<size>` to `tag:<name>` or `auto-fastest` to additionally require a minimum context window, e.g. `tag:general+min_ctx:32000` or `auto-fastest+min_ctx:128k`. `<size>` accepts a raw token count or a `k`/`m` suffix. Models whose context window can't be determined, or is smaller than the requirement, are excluded. See [Model tags](#model-tags).
 - In the Web UI, pinned models can now use either `Canonical Group` mode (default, pins the same model across providers) or `Exact Provider Row` mode from `Settings`
 - Streaming and non-streaming requests are both supported
 
@@ -189,6 +191,7 @@ modelrelay config export | modelrelay config import
 - Each grouped ID can represent the same model across multiple providers
 - When you select one of these IDs in `/v1/chat/completions`, modelrelay routes the request to the provider with the best current QoS for that model group
 - `auto-fastest` is also exposed and routes to the best model overall
+- Each entry includes a `tags` array combining curated capability tags with any user-defined tags (see [Model tags](#model-tags))
 
 Example:
 
@@ -197,12 +200,41 @@ Example:
   "object": "list",
   "data": [
     { "id": "auto-fastest", "object": "model", "owned_by": "router" },
-    { "id": "minimax-m2.5", "object": "model", "owned_by": "relay" },
-    { "id": "kimi-k2.5", "object": "model", "owned_by": "relay" },
-    { "id": "glm4.7", "object": "model", "owned_by": "relay" }
+    { "id": "minimax-m2.5", "object": "model", "owned_by": "relay", "tags": ["agentic", "general", "coding"] },
+    { "id": "kimi-k2.5", "object": "model", "owned_by": "relay", "tags": ["agentic", "coding", "general"] },
+    { "id": "glm4.7", "object": "model", "owned_by": "relay", "tags": ["agentic", "coding", "general"] }
   ]
 }
 ```
+
+### Model tags
+
+Every model carries one or more capability tags, combined from two sources:
+
+- **Curated tags** come from a fixed vocabulary — `coding`, `reasoning`, `general`, `fast`, `agentic` — maintained by project maintainers in `tags.js`.
+- **Custom tags** are freeform labels you assign yourself. In the Web UI, open a model row and edit **Custom Routing Tags**. Assignments are keyed to the canonical model, shared across its providers, and stored in `~/.modelrelay.json`.
+
+Use `model: "tag:<name>"` in `/v1/chat/completions` to route to the best currently available model carrying that tag — curated or custom — instead of naming a specific model. For example, assign `coding` to a few models in the UI, then request `model: "tag:coding"`; normal QoS ranking, availability filtering, and retry behavior choose the best currently eligible tagged model.
+
+#### Minimum context window (`min_ctx`)
+
+Tag membership alone doesn't guarantee a model can fit your prompt — a tag can span models with very different context windows. Append `+min_ctx:<size>` to filter those out before QoS ranking runs:
+
+- `tag:general+min_ctx:32000` — best available `general`-tagged model with at least 32,000 tokens of context
+- `tag:coding+min_ctx:128k` — same, for `coding`, using the `k` shorthand
+- `auto-fastest+min_ctx:1m` — fastest model overall with at least 1,000,000 tokens of context, no tag restriction
+
+`<size>` accepts a plain token count (`32000`) or a `k`/`m` suffix (`32k`, `1m`). Models with no known context window, or a smaller one than requested, are excluded from consideration. An unparseable or unrecognized modifier is ignored, falling back to the unmodified `tag:<name>` or `auto-fastest` behavior rather than erroring.
+
+Modelrelay uses context data reported by the selected provider when it is available. Otherwise, it uses a provider-specific curated value from `sources.js`. It does not copy a context size between providers. It also keeps the context unknown when neither source has a value. For Ollama, the allocated or configured context is usable for this filter. The model maximum alone is not sufficient.
+
+A provider's reported (or curated) context window is an upper bound, not a guarantee — some providers advertise a much larger window than a given account can actually push through in one request (seen live on newly-listed Groq models whose real per-minute token quota was a fraction of their reported context). When modelrelay has already observed a live rate-limit reading for a model (from that provider's response headers, captured on any prior request whether it succeeded or failed), `min_ctx` matching uses the smaller of the reported context and that observed quota. This is populated automatically as requests happen; there's nothing to configure, and it only ever makes filtering stricter, never looser.
+
+### QoS: how speed and quality are weighed
+
+`auto-fastest`, grouped-ID, and `tag:<name>` routing all rank eligible candidates by a QoS score that blends a model's quality (its `intell` percentile among all known models) with its recently observed average latency. Latency is scored continuously and never fully bottoms out at zero — a model averaging 1.1s and one averaging 4 minutes are not treated as equivalent just because both are technically "up" and returning HTTP 200. The latency discount is `target / (target + avg)`: an instant response scores 1.0, a model averaging exactly the configured target scores 0.5, and the score keeps decaying continuously past that — but it always remains a nonzero (last-resort) candidate rather than being excluded outright. Exclusion is still a separate, explicit action (ban a model, or set a minimum coding score / excluded providers list).
+
+The target is `qosLatencyTargetMs`, configurable in the Web UI under **Settings → QoS Latency Target (ms)** (default: 3000ms). Lower it to weight speed more heavily against quality; raise it to let quality dominate over a wider range of observed latencies. It applies uniformly to `auto-fastest`, `tag:<name>`, grouped-ID, and pinned-model routing.
 
 ## Config
 
@@ -274,7 +306,7 @@ modelrelay supports configuring multiple OpenAI-compatible upstream endpoints (v
 To trigger a manual npm update and restart the service, run:
 
 ```bash
-npm i -g modelrelay@latest
+npm i -g @schaetzkc/modelrelay@latest
 modelrelay autostart --start
 ```
 
@@ -306,4 +338,4 @@ actual install still comes from the tarball path.
 
 ---
 
-⭐️ If you find modelrelay useful, please consider [starring the repo](https://github.com/ellipticmarketing/modelrelay)!
+⭐️ If you find modelrelay useful, please consider [starring the repo](https://github.com/gschaetz/modelrelay)!

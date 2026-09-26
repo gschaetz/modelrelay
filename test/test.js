@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
 import { sources, MODELS, canonicalizeModelId, getPreferredModelContext, getPreferredModelLabel, getScore, resolveAliasedModelId } from '../sources.js'
+import { TAG_VOCABULARY, MODEL_TAGS, getModelTags as getBuiltInModelTags } from '../tags.js'
 import {
   getAvg,
   getVerdict,
@@ -14,9 +15,14 @@ import {
   findBestModel,
   rankModelsForRouting,
   getRoutingModelKey,
+  latencyScore,
+  computeQoS,
+  DEFAULT_QOS_LATENCY_TARGET_MS,
   buildModelGroups,
   filterModelsByRequested,
   isRetryableProxyStatus,
+  computeFailedRefreshRetryAt,
+  parseContextSize,
   parseArgs,
   parseOpenRouterKeyRateLimit,
   selectNextApiKeyFromPool,
@@ -24,10 +30,12 @@ import {
 } from '../lib/utils.js'
 import { buildOpenClawProviderConfig } from '../lib/onboard.js'
 import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
+import { buildOpenRouterQualityIndex, fitLinearRegression, qualityLookupKeys, resolveModelQuality } from '../lib/model-quality.js'
+import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags, normalizeTag, normalizeTags, setModelTags } from '../lib/tags.js'
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
 import { exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint } from '../lib/config.js'
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse } from '../lib/server.js'
+import { captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse } from '../lib/server.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -200,6 +208,10 @@ describe('sources data integrity', () => {
     assert.ok(Array.isArray(sources.kiro.models))
   })
 
+  it('does not enable discovery for Codestral because its API has no models endpoint', () => {
+    assert.equal(sources.codestral.discoverable, undefined)
+  })
+
   it('has expected provider structure', () => {
     for (const [providerKey, provider] of Object.entries(sources)) {
       assert.equal(typeof providerKey, 'string')
@@ -221,13 +233,15 @@ describe('sources data integrity', () => {
     }
   })
 
-  it('flat MODELS tuples have 5 fields', () => {
+  it('flat MODELS tuples include context provenance', () => {
     for (const model of MODELS) {
       assert.ok(Array.isArray(model))
-      assert.equal(model.length, 5)
+      assert.equal(model.length, 7)
       assert.equal(typeof model[0], 'string')
       assert.equal(typeof model[1], 'string')
       assert.equal(typeof model[4], 'string')
+      assert.equal(model[5], 'curated')
+      assert.equal(typeof model[6], 'string')
     }
   })
 
@@ -242,6 +256,40 @@ describe('sources data integrity', () => {
       const key = `${providerKey}/${modelId}`
       assert.equal(seen.has(key), false, `Duplicate model key found: ${key}`)
       seen.add(key)
+    }
+  })
+})
+
+describe('tags data integrity', () => {
+  const knownModelIds = new Set(MODELS.map(([modelId]) => modelId))
+
+  it('has no duplicate entries in TAG_VOCABULARY', () => {
+    assert.equal(TAG_VOCABULARY.length, new Set(TAG_VOCABULARY).size)
+  })
+
+  it('only assigns tags that are in TAG_VOCABULARY', () => {
+    for (const [modelId, tags] of Object.entries(MODEL_TAGS)) {
+      for (const tag of tags) {
+        assert.ok(TAG_VOCABULARY.includes(tag), `Unknown tag "${tag}" on ${modelId}`)
+      }
+    }
+  })
+
+  it('does not assign duplicate tags to the same model', () => {
+    for (const [modelId, tags] of Object.entries(MODEL_TAGS)) {
+      assert.equal(tags.length, new Set(tags).size, `Duplicate tag on ${modelId}`)
+    }
+  })
+
+  it('only keys MODEL_TAGS by model IDs that exist in sources.js', () => {
+    for (const modelId of Object.keys(MODEL_TAGS)) {
+      assert.ok(knownModelIds.has(modelId), `MODEL_TAGS has a stale key: ${modelId}`)
+    }
+  })
+
+  it('assigns at least one tag to every model in sources.js', () => {
+    for (const modelId of knownModelIds) {
+      assert.ok(getBuiltInModelTags(modelId).length > 0, `No tags assigned to ${modelId}`)
     }
   })
 })
@@ -913,6 +961,253 @@ describe('provider api key resolution', () => {
   })
 })
 
+describe('user-defined model tags', () => {
+  it('normalizes and deduplicates tag input', () => {
+    assert.equal(normalizeTag(' Code Review! '), 'code-review')
+    assert.deepEqual(normalizeTags(['Fast', 'fast', 'agentic']), ['fast', 'agentic'])
+  })
+
+  it('stores tags under the canonical model id shared by providers', () => {
+    const config = {}
+    const updated = setModelTags(config, 'minimax-m2.5-free', ['Coding', 'agentic'])
+    assert.equal(updated.key, 'minimax/minimax-m2.5')
+    assert.deepEqual(getUserModelTags(config, 'minimax/minimax-m2.5:free'), ['coding', 'agentic'])
+    assert.deepEqual(getConfiguredTagNames(config), ['agentic', 'coding'])
+    assert.equal(getModelTagKey('minimax-m2.5-free'), 'minimax/minimax-m2.5')
+  })
+
+  it('clears persisted entries when the last tag is removed', () => {
+    const config = { modelTags: { 'openai/gpt-oss-120b': ['general'] } }
+    setModelTags(config, 'openai/gpt-oss-120b:free', [])
+    assert.deepEqual(config.modelTags, {})
+  })
+
+  it('routes tag requests across all matching provider rows', () => {
+    const results = [
+      mockResult({ modelId: 'one', tags: ['coding'] }),
+      mockResult({ modelId: 'two', tags: ['fast', 'coding'] }),
+      mockResult({ modelId: 'three', tags: ['reasoning'] }),
+    ]
+    assert.deepEqual(filterModelsByRequested(results, 'tag:coding').map(model => model.modelId), ['one', 'two'])
+    assert.deepEqual(filterModelsByRequested(results, 'tag:missing'), [])
+    assert.deepEqual(filterModelsByRequested(results, 'tag:'), [])
+  })
+
+  it('filters tag requests by a min_ctx modifier', () => {
+    const results = [
+      mockResult({ modelId: 'small', tags: ['general'], ctx: '8k' }),
+      mockResult({ modelId: 'medium', tags: ['general'], ctx: '32k' }),
+      mockResult({ modelId: 'large', tags: ['general'], ctx: '1m' }),
+      mockResult({ modelId: 'maximum-only', tags: ['general'], ctx: '1m', ctxSource: 'model-maximum' }),
+      mockResult({ modelId: 'no-ctx', tags: ['general'], ctx: null }),
+      mockResult({ modelId: 'wrong-tag', tags: ['coding'], ctx: '1m' }),
+    ]
+
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general+min_ctx:32000').map(m => m.modelId),
+      ['medium', 'large'],
+    )
+    // Exact boundary: a 32k model satisfies a 32000-token floor.
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general+min_ctx:32001').map(m => m.modelId),
+      ['large'],
+    )
+    // Shorthand k/m suffixes on the modifier value itself.
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general+min_ctx:1m').map(m => m.modelId),
+      ['large'],
+    )
+    // No modifier -- unchanged plain tag behavior, unparseable/missing ctx included.
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general').map(m => m.modelId),
+      ['small', 'medium', 'large', 'maximum-only', 'no-ctx'],
+    )
+  })
+
+  it('caps min_ctx matching at a live-observed rate-limit token quota, not just the advertised context window', () => {
+    const results = [
+      // Reports a huge window, but the account's real per-minute quota (captured live from
+      // provider rate-limit headers) is far below the requested floor -- must be excluded.
+      mockResult({ modelId: 'quota-capped', tags: ['general'], ctx: '131k', ctxSource: 'provider-reported', rateLimit: { limitTokens: 8000 } }),
+      // Quota is present but comfortably above the floor -- still eligible.
+      mockResult({ modelId: 'quota-ample', tags: ['general'], ctx: '131k', ctxSource: 'provider-reported', rateLimit: { limitTokens: 64000 } }),
+      // No rate-limit data captured yet -- falls back to the advertised window, unchanged.
+      mockResult({ modelId: 'no-quota-data', tags: ['general'], ctx: '131k', ctxSource: 'provider-reported' }),
+    ]
+
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general+min_ctx:32000').map(m => m.modelId),
+      ['quota-ample', 'no-quota-data'],
+    )
+    assert.deepEqual(
+      filterModelsByRequested(results, 'auto-fastest+min_ctx:32000').map(m => m.modelId),
+      ['quota-ample', 'no-quota-data'],
+    )
+  })
+
+  it('keeps proxy quotas on the responding model when filtering later requests', async () => {
+    const capped = mockResult({ providerKey: 'groq', modelId: 'quota-capped', tags: ['general'], ctx: '131k' })
+    const ample = mockResult({ providerKey: 'groq', modelId: 'quota-ample', tags: ['general'], ctx: '131k' })
+    const otherProvider = mockResult({ providerKey: 'other', modelId: 'quota-capped', tags: ['general'], ctx: '131k' })
+    const results = [capped, ample, otherProvider]
+    const response = (limit, status = 200) => new Response('{}', {
+      status, headers: { 'x-ratelimit-limit-tokens': String(limit) },
+    })
+    const assertEligible = () => {
+      for (const request of ['auto-fastest+min_ctx:32000', 'tag:general+min_ctx:32000']) {
+        assert.deepEqual(filterModelsByRequested(results, request), [ample, otherProvider])
+      }
+    }
+
+    await captureProxyRateLimit(results, ample, response(64000), 'test-key')
+    await captureProxyRateLimit(results, capped, response(8000, 429), 'test-key')
+    assert.equal(ample.rateLimit.limitTokens, 64000)
+    assert.equal(ample.rateLimit.wasRateLimited, false)
+    assert.equal(otherProvider.rateLimit, undefined)
+    assertEligible()
+
+    await captureProxyRateLimit(results, ample, response(64000), 'test-key')
+    assert.equal(capped.rateLimit.limitTokens, 8000)
+    assert.equal(capped.rateLimit.wasRateLimited, true)
+    assertEligible()
+  })
+
+  it('shares OpenRouter key data while preserving each model response quota', async () => {
+    const capped = mockResult({ providerKey: 'openrouter', modelId: 'quota-capped', rateLimit: { limitTokens: 8000 } })
+    const ample = mockResult({ providerKey: 'openrouter', modelId: 'quota-ample' })
+    const other = mockResult({ providerKey: 'groq' })
+    const results = [capped, ample, other]
+    await captureProxyRateLimit(results, ample, new Response('{}', {
+      headers: { 'x-ratelimit-limit-tokens': '64000' },
+    }), 'test-key', async () => ({ creditLimit: 10, creditRemaining: 9 }))
+
+    assert.equal(capped.rateLimit.limitTokens, 8000)
+    assert.equal(ample.rateLimit.limitTokens, 64000)
+    assert.equal(capped.rateLimit.creditRemaining, 9)
+    assert.equal(ample.rateLimit.creditRemaining, 9)
+    assert.equal(other.rateLimit, undefined)
+    assert.deepEqual(filterModelsByRequested(results, 'auto-fastest+min_ctx:32000'), [ample, other])
+  })
+
+  it('ignores unknown or malformed tag modifiers instead of rejecting the request', () => {
+    const results = [mockResult({ modelId: 'one', tags: ['general'], ctx: '128k' })]
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general+unknown_modifier:whatever').map(m => m.modelId),
+      ['one'],
+    )
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general+min_ctx:not-a-number').map(m => m.modelId),
+      ['one'],
+    )
+    assert.deepEqual(
+      filterModelsByRequested(results, 'tag:general+').map(m => m.modelId),
+      ['one'],
+    )
+  })
+
+  it('filters auto-fastest by min_ctx regardless of capability tags (issue #42)', () => {
+    const results = [
+      mockResult({ modelId: 'small', tags: ['general'], ctx: '8k' }),
+      mockResult({ modelId: 'medium', tags: ['coding'], ctx: '128k' }),
+      mockResult({ modelId: 'large', ctx: '1m' }), // no tags at all -- still eligible
+    ]
+
+    assert.deepEqual(
+      filterModelsByRequested(results, 'auto-fastest+min_ctx:128k').map(m => m.modelId),
+      ['medium', 'large'],
+    )
+    // Plain auto-fastest is untouched -- still returns everything, unfiltered.
+    assert.deepEqual(
+      filterModelsByRequested(results, 'auto-fastest').map(m => m.modelId),
+      ['small', 'medium', 'large'],
+    )
+    // A malformed/unknown modifier falls back to plain auto-fastest behavior.
+    assert.deepEqual(
+      filterModelsByRequested(results, 'auto-fastest+bogus:xyz').map(m => m.modelId),
+      ['small', 'medium', 'large'],
+    )
+  })
+
+  it('normalizes persisted model tags safely', () => {
+    const normalized = normalizeConfigShape({
+      modelTags: {
+        ' Model/One ': [' Fast ', 'fast', 'Code Review!', null],
+        broken: 'not-an-array',
+      },
+    })
+    assert.deepEqual(normalized.modelTags, { 'model/one': ['fast', 'code-review'] })
+  })
+})
+
+describe('OpenRouter model quality scoring', () => {
+  const catalog = [
+    {
+      id: 'vendor/direct-model',
+      created: 1_750_000_000,
+      context_length: 131072,
+      supported_parameters: ['reasoning', 'tools', 'structured_outputs'],
+      benchmarks: {
+        artificial_analysis: { coding_index: 72 },
+        design_arena: [{ arena: 'models', category: 'codecategories', elo: 1300 }],
+      },
+    },
+    {
+      id: 'vendor/training-model',
+      benchmarks: {
+        artificial_analysis: { coding_index: 52 },
+        design_arena: [{ arena: 'models', category: 'codecategories', elo: 1100 }],
+      },
+    },
+    {
+      id: 'vendor/arena-only:free',
+      benchmarks: {
+        design_arena: [{ arena: 'models', category: 'codecategories', elo: 1200 }],
+      },
+    },
+    {
+      id: 'vendor/metadata-only:free',
+      created: 1_750_000_000,
+      context_length: 262144,
+      supported_parameters: ['reasoning', 'tools'],
+    },
+  ]
+
+  it('normalizes provider and runtime variants for cross-catalog matching', () => {
+    assert.ok(qualityLookupKeys('deepseek-v4-flash:0731').includes('deepseek-v4-flash-0731'))
+    assert.ok(qualityLookupKeys('inclusionai/ling-3.0-flash:free').includes('ling-3.0-flash'))
+  })
+
+  it('fits a deterministic linear regression for Design Arena conversion', () => {
+    assert.deepEqual(fitLinearRegression([[1000, 40], [1200, 60]]), {
+      slope: 0.1,
+      intercept: -60,
+      sampleSize: 2,
+    })
+  })
+
+  it('uses coding index, Design Arena, then metadata in that order', () => {
+    const quality = buildOpenRouterQualityIndex(catalog, [...catalog].reverse(), 1_760_000_000_000)
+    const direct = resolveModelQuality(quality, 'vendor/direct-model', 0.99)
+    const arena = resolveModelQuality(quality, 'arena-only-free', 0.99)
+    const metadata = resolveModelQuality(quality, 'vendor/metadata-only:free', 0.99)
+
+    assert.equal(direct.score, 0.72)
+    assert.equal(direct.source, 'artificial-analysis')
+    assert.equal(direct.isEstimated, false)
+    assert.equal(arena.score, 0.62)
+    assert.equal(arena.source, 'design-arena')
+    assert.equal(metadata.source, 'metadata')
+    assert.ok(metadata.score >= 0.35 && metadata.score <= 0.65)
+  })
+
+  it('labels local and blind defaults when no catalog match exists', () => {
+    const quality = buildOpenRouterQualityIndex(catalog)
+    assert.equal(resolveModelQuality(quality, 'unknown/local', 0.61).source, 'local-fallback')
+    assert.equal(resolveModelQuality(quality, 'unknown/blind').score, 0.45)
+    assert.equal(resolveModelQuality(quality, 'unknown/blind').source, 'default-fallback')
+  })
+})
+
 describe('dynamic model score resolution', () => {
   it('extracts Ollama model records from tags payloads', () => {
     const payload = {
@@ -980,7 +1275,7 @@ describe('dynamic model score resolution', () => {
     assert.equal(getScore('ministral-3:3b'), 0.548)
     assert.equal(getScore('ministral-3:8b'), 0.616)
     assert.equal(getScore('mistral-large-3:675b'), 0.58)
-    assert.equal(getScore('nemotron-3-super'), 0.6047)
+    assert.equal(getScore('nemotron-3-super'), 0.377)
     assert.equal(getScore('qwen/qwen3.6-plus-preview:free'), 0.68)
     assert.equal(getScore('qwen3-vl:235b'), 0.7)
     assert.equal(getScore('qwen3-vl:235b-instruct'), 0.7)
@@ -999,7 +1294,7 @@ describe('dynamic model score resolution', () => {
     assert.equal(getScore('arcee-ai/trinity-large-thinking:free'), 0.632)
     assert.equal(getScore('bytedance-seed/dola-seed-2.0-pro:free'), 0.765)
     assert.equal(getScore('glm-5.1'), 0.584)
-    assert.equal(getScore('google/gemma-4-26b-a4b-it:free'), 0.771)
+    assert.equal(getScore('google/gemma-4-26b-a4b-it:free'), 0.393)
     assert.equal(getScore('google/gemma-4-31b-it:free'), 0.8)
     assert.equal(getScore('kimi-k2.6'), 0.802)
   })
@@ -1032,7 +1327,7 @@ describe('dynamic model score resolution', () => {
     assert.equal(model.isEstimatedScore, false)
   })
 
-  it('uses researched Kimi K2.6 score and context for Ollama discovery', () => {
+  it('does not apply another provider context to Ollama discovery', () => {
     const model = toOllamaModelMeta({
       name: 'kimi-k2.6',
       model: 'kimi-k2.6',
@@ -1042,7 +1337,31 @@ describe('dynamic model score resolution', () => {
     assert.equal(model.label, 'Kimi K2.6')
     assert.equal(model.intell, 0.802)
     assert.equal(model.isEstimatedScore, false)
-    assert.equal(model.ctx, '262k')
+    assert.equal(model.ctx, null)
+    assert.equal(model.ctxSource, null)
+  })
+
+  it('uses the allocated Ollama context before the model maximum', () => {
+    const model = toOllamaModelMeta({
+      name: 'gemma3',
+      model: 'gemma3',
+      _running: { context_length: 4096 },
+      _show: { model_info: { 'gemma3.context_length': 131072 } },
+    })
+
+    assert.equal(model.ctx, '4096')
+    assert.equal(model.ctxSource, 'runtime-allocated')
+  })
+
+  it('labels an unallocated Ollama model limit as a model maximum', () => {
+    const model = toOllamaModelMeta({
+      name: 'gemma3',
+      model: 'gemma3',
+      _show: { model_info: { 'gemma3.context_length': 131072 } },
+    })
+
+    assert.equal(model.ctx, '131072')
+    assert.equal(model.ctxSource, 'model-maximum')
   })
 
   it('keeps MiniMax M-series SWE scores monotonic as versions increase', () => {
@@ -1079,9 +1398,9 @@ describe('dynamic model score resolution', () => {
   it('uses researched score entries for newly discovered OpenRouter free coding models', () => {
     const cases = [
       ['baidu/cobuddy:free', 0.715],
-      ['deepseek-v4-flash-free', 0.79],
+      ['deepseek-v4-flash-free', 0.521],
       ['inclusionai/ring-2.6-1t:free', 0.727],
-      ['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 0.744],
+      ['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 0.138],
       ['poolside/laguna-m.1:free', 0.725],
       ['poolside/laguna-xs.2:free', 0.682],
       ['ring-2.6-1t-free', 0.727],
@@ -1096,11 +1415,11 @@ describe('dynamic model score resolution', () => {
     const cases = [
       ['tencent/hy3:free', 0.78],
       ['hy3-free', 0.78],
-      ['poolside/laguna-xs-2.1:free', 0.709],
-      ['cohere/north-mini-code:free', 0.676],
-      ['north-mini-code-free', 0.676],
-      ['nvidia/nemotron-3-ultra-550b-a55b:free', 0.719],
-      ['nemotron-3-ultra-free', 0.719],
+      ['poolside/laguna-xs-2.1:free', 0.592],
+      ['cohere/north-mini-code:free', 0.365],
+      ['north-mini-code-free', 0.365],
+      ['nvidia/nemotron-3-ultra-550b-a55b:free', 0.493],
+      ['nemotron-3-ultra-free', 0.493],
     ]
 
     for (const [modelId, expectedScore] of cases) {
@@ -1110,21 +1429,33 @@ describe('dynamic model score resolution', () => {
 
   it('resolves every coding model reported by the refresh-scores audit', () => {
     const cases = [
-      ['glm-5.2', 0.787],
-      ['z-ai/glm-5.2', 0.787],
+      ['glm-5.2', 0.688],
+      ['z-ai/glm-5.2', 0.688],
       ['kimi-k2.7-code', 0.62],
       ['moonshotai/kimi-k2.7-code', 0.62],
-      ['mimo-v2.5-free', 0.561],
-      ['minimax-m3', 0.805],
-      ['minimaxai/minimax-m3', 0.805],
-      ['nemotron-3-ultra', 0.719],
-      ['stepfun/step-3.7-flash:free', 0.737],
-      ['stepfun-ai/step-3.7-flash', 0.737],
+      ['mimo-v2.5-free', 0.568],
+      ['minimax-m3', 0.586],
+      ['minimaxai/minimax-m3', 0.586],
+      ['nemotron-3-ultra', 0.493],
+      ['stepfun/step-3.7-flash:free', 0.396],
+      ['stepfun-ai/step-3.7-flash', 0.396],
     ]
 
     for (const [modelId, expectedScore] of cases) {
       assert.equal(getScore(modelId), expectedScore)
     }
+  })
+
+  it('keeps offline fallbacks for the newest discovered free models', () => {
+    const cases = [
+      ['deepseek-v4-flash:0731', 0.691],
+      ['kimi-k3', 0.762],
+      ['inclusionai/ling-3.0-flash:free', 0.608],
+      ['ling-3.0-flash-free', 0.608],
+      ['poolside/laguna-s-2.1:free', 0.625],
+      ['laguna-s-2.1-free', 0.625],
+    ]
+    for (const [modelId, expectedScore] of cases) assert.equal(getScore(modelId), expectedScore)
   })
 
   it('includes newly available NIM coding models in the static catalog', () => {
@@ -1194,7 +1525,7 @@ describe('dynamic model score resolution', () => {
     assert.equal(model.isEstimatedScore, false)
   })
 
-  it('normalizes Ling 2.6 Flash free aliases and keeps provider context metadata', () => {
+  it('does not copy Ling 2.6 context metadata between providers', () => {
     assert.equal(resolveAliasedModelId('ling-2.6-flash-free'), 'inclusionai/ling-2.6-flash')
     assert.equal(resolveAliasedModelId('inclusionai/ling-2.6-flash:free'), 'inclusionai/ling-2.6-flash')
     assert.equal(getScore('ling-2.6-flash-free'), 0.771)
@@ -1205,7 +1536,8 @@ describe('dynamic model score resolution', () => {
 
     assert.ok(model)
     assert.equal(model.label, 'Ling 2.6 Flash')
-    assert.equal(model.ctx, '262k')
+    assert.equal(model.ctx, null)
+    assert.equal(model.ctxSource, null)
     assert.equal(model.intell, 0.771)
     assert.equal(model.isEstimatedScore, false)
 
@@ -1217,6 +1549,8 @@ describe('dynamic model score resolution', () => {
 
     assert.ok(openRouterModel)
     assert.equal(openRouterModel.intell, 0.771)
+    assert.equal(openRouterModel.ctx, '262144')
+    assert.equal(openRouterModel.ctxSource, 'provider-reported')
     assert.equal(openRouterModel.isEstimatedScore, false)
   })
 
@@ -1428,6 +1762,69 @@ describe('rankModelsForRouting', () => {
   })
 })
 
+describe('latencyScore', () => {
+  it('returns 1 at zero latency and 0.5 exactly at the target', () => {
+    assert.equal(latencyScore(0, 1000), 1)
+    assert.equal(latencyScore(1000, 1000), 0.5)
+  })
+
+  it('decays continuously and never saturates to zero', () => {
+    const at1s = latencyScore(1_000, 1000)
+    const at10s = latencyScore(10_000, 1000)
+    const at250s = latencyScore(250_000, 1000)
+    assert.ok(at1s > at10s)
+    assert.ok(at10s > at250s)
+    assert.ok(at250s > 0)
+  })
+
+  it('treats missing ping data (Infinity/null avg) as the neutral midpoint', () => {
+    assert.equal(latencyScore(Infinity, 1000), 0.5)
+    assert.equal(latencyScore(null, 1000), 0.5)
+  })
+
+  it('defaults to DEFAULT_QOS_LATENCY_TARGET_MS when no target is given', () => {
+    assert.equal(latencyScore(DEFAULT_QOS_LATENCY_TARGET_MS), 0.5)
+  })
+})
+
+describe('QoS latency weighting (regression: nvidia/z-ai/glm-5.2 sat at a 200-290s avg for ~24h while still ranking near the top by quality score alone)', () => {
+  it('a catastrophically slow but high-quality model no longer beats a fast, lower-quality one', () => {
+    const catastrophicallySlow = mockResult({
+      label: 'HighQualitySlow',
+      intell: 0.9,
+      pings: [{ ms: 250_000, code: '200' }, { ms: 240_000, code: '200' }],
+    })
+    const fastButLowerQuality = mockResult({
+      label: 'FastLowerQuality',
+      intell: 0.3,
+      pings: [{ ms: 1_500, code: '200' }, { ms: 1_600, code: '200' }],
+    })
+
+    const ranked = rankModelsForRouting([catastrophicallySlow, fastButLowerQuality])
+    assert.equal(ranked[0].label, 'FastLowerQuality')
+  })
+
+  it('still prefers the higher-quality model when both are reasonably fast', () => {
+    const higherQuality = mockResult({ label: 'HigherQuality', intell: 0.9, pings: [{ ms: 1_200, code: '200' }] })
+    const lowerQuality = mockResult({ label: 'LowerQuality', intell: 0.3, pings: [{ ms: 900, code: '200' }] })
+
+    const ranked = rankModelsForRouting([higherQuality, lowerQuality])
+    assert.equal(ranked[0].label, 'HigherQuality')
+  })
+
+  it('a stuck-slow model still scores above zero -- a last resort, not fully excluded', () => {
+    const stuckSlow = mockResult({ label: 'StuckSlow', intell: 0.9, pings: [{ ms: 291_194, code: '200' }] })
+    assert.ok(computeQoS(stuckSlow) > 0)
+  })
+
+  it('is tunable via latencyTargetMs for deployments with different latency expectations', () => {
+    const model = mockResult({ intell: 0.5, pings: [{ ms: 5_000, code: '200' }] })
+    const strict = computeQoS(model, 500)
+    const lenient = computeQoS(model, 10_000)
+    assert.ok(lenient > strict)
+  })
+})
+
 describe('isRetryableProxyStatus', () => {
   it('returns true for 429 and 5xx', () => {
     assert.equal(isRetryableProxyStatus(429), true)
@@ -1435,11 +1832,73 @@ describe('isRetryableProxyStatus', () => {
     assert.equal(isRetryableProxyStatus(503), true)
   })
 
+  it('returns true for 410 (model retired/gone upstream)', () => {
+    assert.equal(isRetryableProxyStatus(410), true)
+    assert.equal(isRetryableProxyStatus('410'), true)
+  })
+
   it('returns false for non-retryable statuses', () => {
     assert.equal(isRetryableProxyStatus(200), false)
     assert.equal(isRetryableProxyStatus(400), false)
     assert.equal(isRetryableProxyStatus(404), false)
     assert.equal(isRetryableProxyStatus('not-a-status'), false)
+  })
+})
+
+describe('computeFailedRefreshRetryAt', () => {
+  it('allows a retry after retryBackoffMs instead of the full refresh TTL', () => {
+    const now = 1_000_000_000
+    const refreshIntervalMs = 60 * 60_000 // 1 hour, e.g. OpenCode Zen's TTL
+    const retryBackoffMs = 2 * 60_000 // 2 minutes
+    const stampedAt = computeFailedRefreshRetryAt(now, refreshIntervalMs, retryBackoffMs)
+
+    // Immediately after the failure, the TTL guard (`now - stampedAt < refreshIntervalMs`)
+    // must still say "not yet" -- otherwise every failure would retry on every ping cycle.
+    assert.equal((now - stampedAt) < refreshIntervalMs, true)
+    assert.ok((now - stampedAt) >= refreshIntervalMs - retryBackoffMs)
+
+    // retryBackoffMs later, the TTL guard must allow a retry.
+    const afterBackoff = now + retryBackoffMs
+    assert.equal((afterBackoff - stampedAt) >= refreshIntervalMs, true)
+
+    // Just before retryBackoffMs elapses, it must still be blocked.
+    const justBefore = now + retryBackoffMs - 1
+    assert.equal((justBefore - stampedAt) >= refreshIntervalMs, false)
+  })
+
+  it('never returns a timestamp in the future relative to a fresh success stamp', () => {
+    const now = Date.now()
+    const stampedAt = computeFailedRefreshRetryAt(now, 30 * 60_000, 2 * 60_000)
+    assert.ok(stampedAt < now)
+  })
+})
+
+describe('parseContextSize', () => {
+  it('parses k and m suffixes into raw token counts', () => {
+    assert.equal(parseContextSize('128k'), 128_000)
+    assert.equal(parseContextSize('1m'), 1_000_000)
+    assert.equal(parseContextSize('1M'), 1_000_000)
+    assert.equal(parseContextSize('10M'), 10_000_000)
+    assert.equal(parseContextSize('0.5m'), 500_000)
+  })
+
+  it('parses plain numbers, string or numeric', () => {
+    assert.equal(parseContextSize('32000'), 32_000)
+    assert.equal(parseContextSize(32000), 32_000)
+  })
+
+  it('returns null for unparseable, empty, or negative input', () => {
+    assert.equal(parseContextSize(null), null)
+    assert.equal(parseContextSize(undefined), null)
+    assert.equal(parseContextSize(''), null)
+    assert.equal(parseContextSize('—'), null)
+    assert.equal(parseContextSize('not-a-number'), null)
+    assert.equal(parseContextSize(-5), null)
+    assert.equal(parseContextSize('-5'), null)
+    assert.equal(parseContextSize('-5k'), null)
+    assert.equal(parseContextSize('128garbage'), null)
+    assert.equal(parseContextSize('1.2.3m'), null)
+    assert.equal(parseContextSize(0), null)
   })
 })
 
@@ -1861,6 +2320,44 @@ describe('model grouping and filtering', () => {
   })
 })
 
+describe('model tag routing', () => {
+  // moonshotai/kimi-k2.7-code -> ['coding'], qwen-qwq-32b -> ['reasoning'], z-ai/glm5 -> ['agentic', 'coding', 'general']
+  const taggedResults = [
+    mockResult({ modelId: 'moonshotai/kimi-k2.7-code', label: 'Kimi K2.7 Code' }),
+    mockResult({ modelId: 'qwen-qwq-32b', label: 'QwQ 32B' }),
+    mockResult({ modelId: 'z-ai/glm5', label: 'GLM 5' }),
+  ]
+
+  it('routes tag: requests to models carrying that tag', () => {
+    const filtered = filterModelsByRequested(taggedResults, 'tag:reasoning', canonicalizeModelId)
+    assert.deepEqual(filtered.map(r => r.modelId), ['qwen-qwq-32b'])
+  })
+
+  it('matches a model tagged with multiple tags under each of its tags', () => {
+    const codingMatches = filterModelsByRequested(taggedResults, 'tag:coding', canonicalizeModelId)
+    assert.ok(codingMatches.some(r => r.modelId === 'moonshotai/kimi-k2.7-code'))
+    assert.ok(codingMatches.some(r => r.modelId === 'z-ai/glm5'))
+
+    const agenticMatches = filterModelsByRequested(taggedResults, 'tag:agentic', canonicalizeModelId)
+    assert.deepEqual(agenticMatches.map(r => r.modelId), ['z-ai/glm5'])
+  })
+
+  it('is case-insensitive for tag names', () => {
+    const filtered = filterModelsByRequested(taggedResults, 'TAG:Reasoning', canonicalizeModelId)
+    assert.deepEqual(filtered.map(r => r.modelId), ['qwen-qwq-32b'])
+  })
+
+  it('returns no models for an unknown tag', () => {
+    const filtered = filterModelsByRequested(taggedResults, 'tag:nonexistent', canonicalizeModelId)
+    assert.equal(filtered.length, 0)
+  })
+
+  it('returns no models when no result carries the requested tag', () => {
+    const filtered = filterModelsByRequested([mockResult({ modelId: 'moonshotai/kimi-k2.7-code' })], 'tag:reasoning', canonicalizeModelId)
+    assert.equal(filtered.length, 0)
+  })
+})
+
 describe('pinned model routing', () => {
   const results = [
     mockResult({ modelId: 'nvidia/glm4.7', label: 'GLM 4.7', providerKey: 'nvidia', pings: [{ ms: 90, code: '200' }], intell: 0.7 }),
@@ -1905,6 +2402,7 @@ describe('pinned model routing', () => {
 describe('package and entrypoint sanity', () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   const binContent = readFileSync(join(ROOT, 'bin/modelrelay.js'), 'utf8')
+  const dashboardContent = readFileSync(join(ROOT, 'public/index.html'), 'utf8')
 
   it('package fields are valid', () => {
     assert.ok(pkg.name)
@@ -1919,6 +2417,33 @@ describe('package and entrypoint sanity', () => {
     assert.ok(binContent.startsWith('#!/usr/bin/env node'))
     assert.ok(binContent.includes("from '../lib/utils.js'"))
     assert.ok(binContent.includes("from '../lib/onboard.js'"))
+  })
+
+  it('labels dashboard scores by the current coding-quality source', () => {
+    assert.ok(dashboardContent.includes('>Coding <i class="sort-arrow"'))
+    assert.ok(dashboardContent.includes('Artificial Analysis coding index'))
+    assert.ok(dashboardContent.includes('Design Arena estimate'))
+    assert.ok(dashboardContent.includes('Metadata estimate'))
+    assert.equal(dashboardContent.includes('>SWE% <i class="sort-arrow"'), false)
+    assert.equal(dashboardContent.includes('>SWE-bench</div>'), false)
+  })
+
+  it('includes the model tag editor and tag-routing guidance', () => {
+    assert.ok(dashboardContent.includes('id="model-tags-input"'))
+    assert.ok(dashboardContent.includes("fetch('/api/models/tags'"))
+    assert.ok(dashboardContent.includes('Use <code>tag:name</code>'))
+  })
+
+  it('formats exact context sizes for display without changing routing data', () => {
+    assert.match(dashboardContent, /function formatContextDisplay\(value\)/)
+    assert.match(dashboardContent, /Math\.round\(tokens \/ 1_000\).*K/)
+    assert.match(dashboardContent, /formatContextDisplay\(m\.ctx\)/)
+  })
+
+  it('includes working provider key reveal and copy controls', () => {
+    assert.ok(dashboardContent.includes('toggleProviderKeyVisibility'))
+    assert.ok(dashboardContent.includes('getConfiguredProviderKey'))
+    assert.ok(dashboardContent.includes('copyProviderKey'))
   })
 })
 
@@ -2306,6 +2831,7 @@ describe('OpenAI-compatible model discovery', () => {
     assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/v1/'), 'https://api.example.com/v1/models')
     assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/v1/chat/completions'), 'https://api.example.com/v1/models')
     assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/v1/models'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'), 'https://generativelanguage.googleapis.com/v1beta/openai/models')
     assert.equal(buildOpenAICompatibleModelsListUrl('api.example.com/v1'), 'https://api.example.com/v1/models')
     assert.equal(buildOpenAICompatibleModelsListUrl(''), null)
     assert.equal(buildOpenAICompatibleModelsListUrl(null), null)
@@ -2330,8 +2856,8 @@ describe('OpenAI-compatible model discovery', () => {
     assert.equal(meta.label, 'Qwen2.5 Coder 7B')
     assert.equal(meta.providerKey, 'openai-compatible:my-vllm')
     assert.equal(meta.providerUrl, 'https://host/v1/chat/completions')
-    // 32768 → "33k" via the shared parser
-    assert.equal(meta.ctx, '33k')
+    assert.equal(meta.ctx, '32768')
+    assert.equal(meta.ctxSource, 'provider-reported')
   })
 
   it('falls back to a synthesized label when the record has none', () => {
@@ -2346,5 +2872,11 @@ describe('OpenAI-compatible model discovery', () => {
     assert.equal(toOpenAICompatibleDiscoveredModelMeta({}, 'openai-compatible:x'), null)
     assert.equal(toOpenAICompatibleDiscoveredModelMeta({ id: '   ' }, 'openai-compatible:x'), null)
     assert.equal(toOpenAICompatibleDiscoveredModelMeta('', 'openai-compatible:x'), null)
+  })
+
+  it('filters non-chat models from discovered provider catalogs', () => {
+    assert.equal(toOpenAICompatibleDiscoveredModelMeta({ id: 'nvidia/nemotron-content-safety' }, 'nvidia'), null)
+    assert.equal(toOpenAICompatibleDiscoveredModelMeta({ id: 'text-embedding-3-large' }, 'nvidia'), null)
+    assert.ok(toOpenAICompatibleDiscoveredModelMeta({ id: 'qwen/qwen3-coder' }, 'nvidia'))
   })
 })
