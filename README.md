@@ -1,6 +1,6 @@
 # 🚀 modelrelay
 
-[![npm version](https://img.shields.io/npm/v/%40gschaetz%2Fmodelrelay?color=green&style=flat-square)](https://npmjs.com/package/@gschaetz/modelrelay)
+[![npm version](https://img.shields.io/npm/v/%40schaetzkc%2Fmodelrelay?color=green&style=flat-square)](https://npmjs.com/package/@schaetzkc/modelrelay)
 [![GitHub stars](https://img.shields.io/github/stars/gschaetz/modelrelay?style=flat-square)](https://github.com/gschaetz/modelrelay/stargazers)
 [![Join Discord](https://img.shields.io/badge/Join_Discord-5865F2?style=flat-square&logo=discord)](https://discord.gg/AqX6Sawq5w)
 
@@ -29,7 +29,7 @@
 ## 🚀 Install via NPM
 
 ```bash
-npm install -g @gschaetz/modelrelay
+npm install -g @schaetzkc/modelrelay
 
 # Start it
 modelrelay
@@ -306,7 +306,7 @@ modelrelay supports configuring multiple OpenAI-compatible upstream endpoints (v
 To trigger a manual npm update and restart the service, run:
 
 ```bash
-npm i -g @gschaetz/modelrelay@latest
+npm i -g @schaetzkc/modelrelay@latest
 modelrelay autostart --start
 ```
 
