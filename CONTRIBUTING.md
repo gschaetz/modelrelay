@@ -1,6 +1,6 @@
 # Contributing to modelrelay
 
-Thanks for considering a contribution. This is a small, actively maintained project — issues and PRs are welcome.
+Thanks for considering a contribution. This is a small, actively maintained project — issues and PRs are welcome. Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Getting started
 
