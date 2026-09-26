@@ -1,6 +1,6 @@
 {
   "name": "@schaetzkc/modelrelay",
-  "version": "1.23.1",
+  "version": "1.23.2",
   "description": "OpenAI-compatible local router that benchmarks free coding models across providers and forwards requests to the best available model.",
   "keywords": [
     "nvidia",
@@ -36,7 +36,7 @@
   "type": "module",
   "main": "bin/modelrelay.js",
   "bin": {
-    "modelrelay": "./bin/modelrelay.js"
+    "modelrelay": "bin/modelrelay.js"
   },
   "files": [
     "bin/",
