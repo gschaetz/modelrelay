@@ -1,7 +1,7 @@
 # 🚀 modelrelay
 
-[![npm version](https://img.shields.io/npm/v/modelrelay?color=green&style=flat-square)](https://npmjs.com/package/modelrelay)
-[![GitHub stars](https://img.shields.io/github/stars/ellipticmarketing/modelrelay?style=flat-square)](https://github.com/ellipticmarketing/modelrelay/stargazers)
+[![npm version](https://img.shields.io/npm/v/%40gschaetz%2Fmodelrelay?color=green&style=flat-square)](https://npmjs.com/package/@gschaetz/modelrelay)
+[![GitHub stars](https://img.shields.io/github/stars/gschaetz/modelrelay?style=flat-square)](https://github.com/gschaetz/modelrelay/stargazers)
 [![Join Discord](https://img.shields.io/badge/Join_Discord-5865F2?style=flat-square&logo=discord)](https://discord.gg/AqX6Sawq5w)
 
 [**Join our Discord**](https://discord.gg/AqX6Sawq5w) for discussions, feature requests, and community support.
@@ -29,7 +29,7 @@
 ## 🚀 Install via NPM
 
 ```bash
-npm install -g modelrelay
+npm install -g @gschaetz/modelrelay
 
 # Start it
 modelrelay
@@ -55,8 +55,8 @@ mkdir modelrelay
 
 cd modelrelay
 
-curl -fsSL -o Dockerfile https://raw.githubusercontent.com/ellipticmarketing/modelrelay/master/Dockerfile
-curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/ellipticmarketing/modelrelay/master/docker-compose.yml
+curl -fsSL -o Dockerfile https://raw.githubusercontent.com/gschaetz/modelrelay/master/Dockerfile
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/gschaetz/modelrelay/master/docker-compose.yml
 
 docker compose up -d --build
 ```
@@ -306,7 +306,7 @@ modelrelay supports configuring multiple OpenAI-compatible upstream endpoints (v
 To trigger a manual npm update and restart the service, run:
 
 ```bash
-npm i -g modelrelay@latest
+npm i -g @gschaetz/modelrelay@latest
 modelrelay autostart --start
 ```
 
@@ -338,4 +338,4 @@ actual install still comes from the tarball path.
 
 ---
 
-⭐️ If you find modelrelay useful, please consider [starring the repo](https://github.com/ellipticmarketing/modelrelay)!
+⭐️ If you find modelrelay useful, please consider [starring the repo](https://github.com/gschaetz/modelrelay)!

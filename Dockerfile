@@ -4,7 +4,7 @@ FROM node:24-alpine
 RUN apk add --no-cache ca-certificates
 
 # Install modelrelay globally
-RUN npm install -g modelrelay
+RUN npm install -g @gschaetz/modelrelay
 
 # Create a directory for the configuration
 WORKDIR /app
