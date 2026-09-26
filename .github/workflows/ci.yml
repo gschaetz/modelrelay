@@ -17,3 +17,4 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm audit --audit-level=moderate
+      - run: npm run license-check

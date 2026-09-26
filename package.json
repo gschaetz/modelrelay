@@ -50,7 +50,9 @@
   ],
   "scripts": {
     "start": "node bin/modelrelay.js",
-    "test": "node --test test/test.js"
+    "test": "node --test test/test.js",
+    "license-check": "license-checker --production --onlyAllow \"MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;Unlicense\"",
+    "sbom": "npm sbom --sbom-format cyclonedx"
   },
   "dependencies": {
     "chalk": "^5.4.1",
@@ -59,12 +61,10 @@
   "overrides": {
     "path-to-regexp": "8.4.0"
   },
-  "pnpm": {
-    "overrides": {
-      "path-to-regexp": "8.4.0"
-    }
-  },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "license-checker": "^25.0.1"
   }
 }
