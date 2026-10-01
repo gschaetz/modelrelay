@@ -31,6 +31,7 @@ import {
   selectNextApiKeyFromPool,
   VERDICT_ORDER,
 } from '../lib/utils.js'
+import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
 import { buildOpenClawProviderConfig } from '../lib/onboard.js'
 import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { buildOpenRouterQualityIndex, fitLinearRegression, qualityLookupKeys, resolveModelQuality } from '../lib/model-quality.js'
@@ -3063,5 +3064,110 @@ describe('OpenAI-compatible model discovery', () => {
     assert.equal(toOpenAICompatibleDiscoveredModelMeta({ id: 'nvidia/nemotron-content-safety' }, 'nvidia'), null)
     assert.equal(toOpenAICompatibleDiscoveredModelMeta({ id: 'text-embedding-3-large' }, 'nvidia'), null)
     assert.ok(toOpenAICompatibleDiscoveredModelMeta({ id: 'qwen/qwen3-coder' }, 'nvidia'))
+  })
+})
+
+
+describe('passive telemetry', () => {
+  const T0 = 1_700_000_000_000
+
+  it('classifies only provider-side failures', () => {
+    assert.equal(classifyFailureStatus(429), 'rateLimit')
+    assert.equal(classifyFailureStatus(500), 'serverError')
+    assert.equal(classifyFailureStatus(503), 'serverError')
+    assert.equal(classifyFailureStatus(410), 'serverError')
+    assert.equal(classifyFailureStatus(400), null)
+    assert.equal(classifyFailureStatus(401), null)
+    assert.equal(classifyFailureStatus(404), null)
+    assert.equal(classifyFailureStatus(200), null)
+  })
+
+  it('does not penalize a model until it has enough samples', () => {
+    const store = createTelemetryStore()
+    for (let i = 0; i < 3; i++) recordFailure(store, 'p/m', 'serverError', { now: T0 })
+    assert.equal(reliabilityMultiplier(store.models['p/m'], T0), 1)
+    assert.equal(reliabilityMultiplier(undefined, T0), 1)
+  })
+
+  it('demotes a model with a poor observed success rate, floored', () => {
+    const store = createTelemetryStore()
+    for (let i = 0; i < 40; i++) recordFailure(store, 'p/bad', 'serverError', { now: T0 })
+    for (let i = 0; i < 40; i++) recordSuccess(store, 'p/good', { now: T0 })
+    const bad = reliabilityMultiplier(store.models['p/bad'], T0)
+    const good = reliabilityMultiplier(store.models['p/good'], T0)
+    assert.equal(bad, TELEMETRY_MIN_MULTIPLIER)
+    assert.equal(good, 1)
+  })
+
+  it('never boosts above 1 and blends by success rate', () => {
+    const store = createTelemetryStore()
+    for (let i = 0; i < 30; i++) recordSuccess(store, 'p/m', { now: T0 })
+    for (let i = 0; i < 30; i++) recordFailure(store, 'p/m', 'rateLimit', { now: T0 })
+    const mult = reliabilityMultiplier(store.models['p/m'], T0)
+    assert.ok(mult > 0.4 && mult < 0.6, `expected ~0.5, got ${mult}`)
+  })
+
+  it('decays old observations with the half-life', () => {
+    const store = createTelemetryStore()
+    for (let i = 0; i < 20; i++) recordFailure(store, 'p/m', 'network', { now: T0 })
+    const fresh = getReliability(store.models['p/m'], T0)
+    const aged = getReliability(store.models['p/m'], T0 + TELEMETRY_HALF_LIFE_MS)
+    assert.ok(Math.abs(aged.samples - fresh.samples / 2) < 1e-9)
+    const muchLater = reliabilityMultiplier(store.models['p/m'], T0 + 10 * TELEMETRY_HALF_LIFE_MS)
+    assert.equal(muchLater, 1)
+  })
+
+  it('tracks ttft and tokens per second with smoothing', () => {
+    const store = createTelemetryStore()
+    recordSuccess(store, 'p/m', { ttftMs: 500, durationMs: 2500, completionTokens: 100, now: T0 })
+    const entry = store.models['p/m']
+    assert.equal(entry.ttftMs, 500)
+    assert.equal(entry.tokensPerSec, 50)
+    recordSuccess(store, 'p/m', { ttftMs: 1000, durationMs: 3000, completionTokens: 100, now: T0 })
+    assert.ok(entry.ttftMs > 500 && entry.ttftMs < 1000)
+  })
+
+  it('ignores token rate when generation time is unusable', () => {
+    const store = createTelemetryStore()
+    recordSuccess(store, 'p/m', { ttftMs: 500, durationMs: 500, completionTokens: 100, now: T0 })
+    assert.equal(store.models['p/m'].tokensPerSec, null)
+  })
+
+  it('ignores unknown failure kinds and empty keys', () => {
+    const store = createTelemetryStore()
+    recordFailure(store, 'p/m', 'bogus', { now: T0 })
+    recordFailure(store, '', 'network', { now: T0 })
+    recordSuccess(store, null, { now: T0 })
+    assert.deepEqual(store.models, {})
+  })
+
+  it('round-trips through normalize and drops malformed entries', () => {
+    const store = createTelemetryStore()
+    recordSuccess(store, 'p/m', { ttftMs: 100, now: T0 })
+    recordFailure(store, 'p/m', 'midstream', { now: T0 })
+    const restored = normalizeTelemetryStore(JSON.parse(JSON.stringify(store)))
+    assert.deepEqual(restored.models['p/m'].kinds, { midstream: 1 })
+    const cleaned = normalizeTelemetryStore({ models: { a: null, b: { ok: -1, fail: 0, updatedAt: T0 }, c: { ok: 'x' } } })
+    assert.deepEqual(cleaned.models, {})
+    assert.deepEqual(normalizeTelemetryStore('garbage').models, {})
+  })
+
+  it('summarizes entries for the API', () => {
+    const store = createTelemetryStore()
+    for (let i = 0; i < 10; i++) recordSuccess(store, 'p/m', { now: T0 })
+    const summary = summarizeTelemetry(store, T0)
+    assert.equal(summary['p/m'].multiplier, 1)
+    assert.ok(summary['p/m'].successRate > 0.9)
+  })
+})
+
+describe('QoS reliability option', () => {
+  const mk = (id) => ({ modelId: id, providerKey: 'p', status: 'up', pings: [{ ms: 500, code: '200', ts: Date.now() }], intell: 50 })
+  it('demotes a candidate via reliabilityFor without changing default ranking', () => {
+    const a = mk('a')
+    const b = mk('b')
+    const baseline = rankModelsForRouting([a, b])
+    const demoted = rankModelsForRouting([a, b], [], { reliabilityFor: r => (r.modelId === baseline[0].modelId ? 0.25 : 1) })
+    assert.equal(demoted[0].modelId, baseline[1].modelId)
   })
 })
