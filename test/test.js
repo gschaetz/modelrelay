@@ -22,6 +22,8 @@ import {
   filterModelsByRequested,
   isRateLimitShapedError,
   isRetryableProxyStatus,
+  isErrorShapedFirstSseEvent,
+  peekFirstSseEvent,
   computeFailedRefreshRetryAt,
   parseContextSize,
   parseArgs,
@@ -1932,6 +1934,99 @@ describe('isRateLimitShapedError', () => {
     assert.equal(isRateLimitShapedError(400, undefined), false)
     assert.equal(isRateLimitShapedError(400, ''), false)
     assert.equal(isRateLimitShapedError(400, { message: 'tokens per minute' }), false)
+  })
+})
+
+describe('isErrorShapedFirstSseEvent', () => {
+  it('recognizes a first chunk with a finish_reason and no content (seen live: AtlasCloud)', () => {
+    const event = 'data: {"id":"gen-1","choices":[{"index":0,"delta":{},"finish_reason":"error"}]}\n\n'
+    assert.equal(isErrorShapedFirstSseEvent(event), true)
+  })
+
+  it('recognizes a top-level error object', () => {
+    const event = 'data: {"error":{"message":"upstream failed","code":500}}\n\n'
+    assert.equal(isErrorShapedFirstSseEvent(event), true)
+  })
+
+  it('recognizes an immediate [DONE] with no prior chunk', () => {
+    assert.equal(isErrorShapedFirstSseEvent('data: [DONE]\n\n'), true)
+  })
+
+  it('does not flag a normal content chunk, even with a trailing finish_reason', () => {
+    const contentChunk = 'data: {"choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}\n\n'
+    assert.equal(isErrorShapedFirstSseEvent(contentChunk), false)
+
+    const normalFinish = 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+    // A healthy stream's *first* chunk is never a bare finish -- this exists to document that the
+    // detector only looks at shape, not position; server.js only calls it on the first event.
+    assert.equal(isErrorShapedFirstSseEvent(normalFinish), true)
+  })
+
+  it('does not flag a tool-call-only finish', () => {
+    const toolCallChunk = 'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"foo","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\n'
+    assert.equal(isErrorShapedFirstSseEvent(toolCallChunk), false)
+  })
+
+  it('fails open on unparseable or missing data', () => {
+    assert.equal(isErrorShapedFirstSseEvent(''), false)
+    assert.equal(isErrorShapedFirstSseEvent(null), false)
+    assert.equal(isErrorShapedFirstSseEvent('event: ping\n\n'), false)
+    assert.equal(isErrorShapedFirstSseEvent('data: {not valid json\n\n'), false)
+  })
+})
+
+describe('peekFirstSseEvent', () => {
+  function streamFromChunks(chunks) {
+    const encoder = new TextEncoder()
+    let i = 0
+    return new ReadableStream({
+      pull(controller) {
+        if (i >= chunks.length) {
+          controller.close()
+          return
+        }
+        controller.enqueue(encoder.encode(chunks[i]))
+        i += 1
+      },
+    })
+  }
+
+  async function readAll(stream) {
+    const reader = stream.getReader()
+    const decoder = new TextDecoder()
+    let out = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (value) out += decoder.decode(value, { stream: true })
+      if (done) break
+    }
+    return out
+  }
+
+  it('flags an error-shaped first event and still replays it byte-for-byte', async () => {
+    const chunks = ['data: {"choices":[{"index":0,"delta":{},"finish_reason":"error"}]}\n\n']
+    const { body, errorShaped } = await peekFirstSseEvent(streamFromChunks(chunks))
+    assert.equal(errorShaped, true)
+    assert.equal(await readAll(body), chunks.join(''))
+  })
+
+  it('does not flag a healthy multi-chunk stream, and replays all of it unchanged', async () => {
+    const chunks = [
+      'data: {"choices":[{"index":0,"delta":{"content":"Hel"},"finish_reason":null}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":null}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+      'data: [DONE]\n\n',
+    ]
+    const { body, errorShaped } = await peekFirstSseEvent(streamFromChunks(chunks))
+    assert.equal(errorShaped, false)
+    assert.equal(await readAll(body), chunks.join(''))
+  })
+
+  it('splits a single chunk containing two events, without losing the second one', async () => {
+    const combined = 'data: {"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n\ndata: [DONE]\n\n'
+    const { body, errorShaped } = await peekFirstSseEvent(streamFromChunks([combined]))
+    assert.equal(errorShaped, false)
+    assert.equal(await readAll(body), combined)
   })
 })
 
