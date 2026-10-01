@@ -21,23 +21,23 @@ When releasing a new version, follow this exact process:
 
 1. **Version Check**: Check if version already exists with `git log --oneline | grep "^[a-f0-9]\+ [0-9]"`
 2. **Version Bump**: Update version in `package.json`. If the releas only includes bug 
-fixes, bump a patch version  (e.g., `0.1.16` → `0.1.17`). If it includes new features, bump a minor version  (e.g., `0.1.16` → `0.2.0`)
+fixes, bump a patch version  (e.g., `1.23.3` → `1.23.4`). If it includes new features, bump a minor version  (e.g., `1.23.3` → `1.24.0`)
 Do not bump the major version.
 3. **Commit ALL Changed Files**: `git add . && git commit -m "Fixed issue with autostart"`
    - Always commit using a description of what was changed as the commit message. 
    - Include ALL modified files in the commit (bin/, lib/, test/, README.md, etc.)
-4. **Push**: `git push origin master` — this repo's release branch is `master`, and GitHub Actions will auto-publish to npm
-5. **Create GitHub Release**:
+4. **Push**: `git push origin master` — this repo's release branch is `master` (pushing does not publish)
+5. **Create GitHub Release** — this is what triggers the GitHub Actions npm publish. This repo is a fork, so always pass `--repo gschaetz/modelrelay` (or run `gh repo set-default gschaetz/modelrelay` once), otherwise `gh` targets the archived upstream and fails:
    ```bash
-   gh release create VERSION --title "VERSION" --notes "Release notes"
+   gh release create VERSION --repo gschaetz/modelrelay --target master --title "VERSION" --notes "Release notes"
    ```
-   (e.g., `gh release create 1.5.0 --title "1.5.0" --notes "Fixed an issue with ABC"`)
+   (e.g., `gh release create 1.5.0 --repo gschaetz/modelrelay --target master --title "1.5.0" --notes "Fixed an issue with ABC"`)
    When writing the release notes, summarize the changes from all commits since the last release.
 6. **Wait for npm Publish":
    ```bash
-   for i in $(seq 1 30); do sleep 10; v=$(npm view modelrelay version 2>/dev/null); echo "Attempt $i: npm version = $v"; if [ "$v" = "0.1.17" ]; then echo "✅ published!"; break; fi; done
+   for i in $(seq 1 30); do sleep 10; v=$(npm view @schaetzkc/modelrelay version 2>/dev/null); echo "Attempt $i: npm version = $v"; if [ "$v" = "1.23.4" ]; then echo "✅ published!"; break; fi; done
    ```
-7. **Install and Verify**: `npm install -g modelrelay@0.1.17`
+7. **Install and Verify**: `npm install -g @schaetzkc/modelrelay@1.23.4`
 8. **Test Binary**: `modelrelay --help` (or any other command to verify it works)
 9. **Only when the global npm-installed version works → the release is confirmed**
 
@@ -47,16 +47,16 @@ Do not bump the major version.
 
 **Never trust local-only testing.** `pnpm start` runs from the repo and won't catch missing files in the published package. Always run the full npm verification:
 
-1. Bump version in `package.json` (e.g. `0.1.14` → `0.1.15`)
-2. Commit and push to `master` — this repo's release branch is `master`, and GitHub Actions auto-publishes to npm
+1. Bump version in `package.json` (e.g. `1.23.3` → `1.23.4`)
+2. Commit and push to `master`, then create the GitHub release (see Release Process step 5) — creating the release is what triggers the npm publish
 3. Wait for the new version to appear on npm:
    ```bash
    # Poll until npm has the new version
-   for i in $(seq 1 30); do sleep 10; v=$(npm view modelrelay version 2>/dev/null); echo "Attempt $i: npm version = $v"; if [ "$v" = "NEW_VERSION" ]; then echo "✅ published!"; break; fi; done
+   for i in $(seq 1 30); do sleep 10; v=$(npm view @schaetzkc/modelrelay version 2>/dev/null); echo "Attempt $i: npm version = $v"; if [ "$v" = "NEW_VERSION" ]; then echo "✅ published!"; break; fi; done
    ```
 4. Install the published version globally:
    ```bash
-   npm install -g modelrelay@NEW_VERSION
+   npm install -g @schaetzkc/modelrelay@NEW_VERSION
    ```
 5. Run the global binary and verify it works:
    ```bash
