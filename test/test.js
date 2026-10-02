@@ -3172,6 +3172,15 @@ describe('passive telemetry', () => {
     assert.equal(restored.models['p/m'].tokensPerSec, 50)
   })
 
+  it('treats non-positive saved ttft and token rate as unmeasured', () => {
+    const restored = normalizeTelemetryStore({ models: { 'p/m': { ok: 1, fail: 0, kinds: {}, updatedAt: T0, ttftMs: 0, tokensPerSec: 0 } } })
+    assert.equal(restored.models['p/m'].ttftMs, null)
+    assert.equal(restored.models['p/m'].tokensPerSec, null)
+    const kept = normalizeTelemetryStore({ models: { 'p/m': { ok: 1, fail: 0, kinds: {}, updatedAt: T0, ttftMs: 820, tokensPerSec: 64.2 } } })
+    assert.equal(kept.models['p/m'].ttftMs, 820)
+    assert.equal(kept.models['p/m'].tokensPerSec, 64.2)
+  })
+
   it('summarizes entries for the API', () => {
     const store = createTelemetryStore()
     for (let i = 0; i < 10; i++) recordSuccess(store, 'p/m', { now: T0 })

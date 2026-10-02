@@ -13,7 +13,6 @@ relative_links:
   enabled: true
   collections: false
 
-logo: "/assets/modelrelay-icon.png"
 favicon_ico: "/assets/favicon.ico"
 
 search_enabled: true
