@@ -1,3 +1,8 @@
+---
+title: Endpoints
+nav_order: 5
+---
+
 # Endpoints
 
 ## `/v1/chat/completions`

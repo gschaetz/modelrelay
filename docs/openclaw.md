@@ -1,3 +1,8 @@
+---
+title: OpenClaw
+nav_order: 3
+---
+
 # OpenClaw Integration
 
 `modelrelay onboard` can auto-configure OpenClaw.

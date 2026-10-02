@@ -1,3 +1,8 @@
+---
+title: CLI
+nav_order: 4
+---
+
 # CLI
 
 ```bash

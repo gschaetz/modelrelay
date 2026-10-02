@@ -1,3 +1,8 @@
+---
+title: Configuration
+nav_order: 8
+---
+
 # Config
 
 - Router config file: `~/.modelrelay.json`

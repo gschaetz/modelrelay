@@ -1,0 +1,22 @@
+title: modelrelay
+description: OpenAI-compatible local router that benchmarks free coding models and forwards requests to the best available one.
+url: https://gschaetz.github.io
+baseurl: /modelrelay
+
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+  - jekyll-relative-links
+
+permalink: pretty
+relative_links:
+  enabled: true
+  collections: false
+
+search_enabled: true
+heading_anchors: true
+aux_links:
+  GitHub: https://github.com/gschaetz/modelrelay
+  npm: https://npmjs.com/package/@schaetzkc/modelrelay
+  Discord: https://discord.gg/AqX6Sawq5w
+aux_links_new_tab: true

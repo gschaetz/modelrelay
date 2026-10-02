@@ -1,3 +1,8 @@
+---
+title: Telemetry
+nav_order: 7
+---
+
 # Telemetry
 
 modelrelay records how each provider/model behaves on your **real proxied requests** and uses that to demote models that keep failing, even when their background health pings look fine. Everything stays local: only counts and timings are stored, never prompt or response content.

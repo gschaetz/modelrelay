@@ -1,3 +1,8 @@
+---
+title: Routing
+nav_order: 6
+---
+
 # Routing
 
 ## Model tags

@@ -1,3 +1,8 @@
+---
+title: Integrations
+nav_order: 2
+---
+
 # Integrations
 
 Use `modelrelay onboard` to save provider keys and auto-configure integrations for OpenClaw or OpenCode.

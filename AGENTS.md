@@ -18,7 +18,8 @@ User-facing reference documentation lives in `docs/` (one page per topic) and th
 2. **If the README also covers the topic, update it in the same commit.** Do not let the README and `docs/` disagree. Keep one source of truth per topic: the README summarizes and links to the `docs/` page instead of restating the details.
 3. **Keep generated snippets in sync too.** `lib/onboard.js` prints config snippets (OpenClaw, OpenCode, PicoClaw) that duplicate the examples in `docs/integrations.md`, `docs/openclaw.md` and the README. Change them together.
 4. **Before finishing, check the docs.** Run a quick `grep` of `README.md` and `docs/` for any flag, endpoint, key or selector you changed, and confirm no stale mention remains. Verify internal links between `docs/` pages still resolve.
-5. **Releases:** the npm package page shows the README as of the last published version, so README changes only reach npm on the next release. `docs/` is not part of the npm package (it is not in `files`).
+5. **New `docs/` pages need front matter** (`title` and `nav_order`) so they appear in the site's sidebar, and a row in the table below and in `docs/index.md`. The site is built by GitHub Pages from `docs/` (Jekyll with the just-the-docs theme, config in `docs/_config.yml`) and published at https://gschaetz.github.io/modelrelay/ after every push to `master`. Link between pages with relative `.md` links; from the README use the full site URLs.
+6. **Releases:** the npm package page shows the README as of the last published version, so README changes only reach npm on the next release. `docs/` is not part of the npm package (it is not in `files`).
 
 | Topic | Page |
 |---|---|

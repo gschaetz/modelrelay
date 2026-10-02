@@ -1,3 +1,9 @@
+---
+title: Home
+nav_order: 1
+permalink: /
+---
+
 # modelrelay documentation
 
 **modelrelay** is an OpenAI-compatible local router that benchmarks free coding models across providers and forwards your requests to the best available one. This is the reference documentation; for install and a quick start, see the [README](https://github.com/gschaetz/modelrelay#readme).

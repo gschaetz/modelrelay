@@ -1,3 +1,8 @@
+---
+title: Troubleshooting
+nav_order: 9
+---
+
 # Troubleshooting
 
 ## Clicking the update button or running `modelrelay` won't perform an update
