@@ -3161,6 +3161,17 @@ describe('passive telemetry', () => {
     assert.equal(summary['p/m'].failures.rateLimit, 2)
   })
 
+  it('keeps unmeasured ttft and token rate as null across a save and reload', () => {
+    const store = createTelemetryStore()
+    recordFailure(store, 'p/m', 'rateLimit', { now: T0 })
+    const restored = normalizeTelemetryStore(JSON.parse(JSON.stringify(store)))
+    assert.equal(restored.models['p/m'].ttftMs, null)
+    assert.equal(restored.models['p/m'].tokensPerSec, null)
+    recordSuccess(restored, 'p/m', { ttftMs: 800, durationMs: 2800, completionTokens: 100, now: T0 })
+    assert.equal(restored.models['p/m'].ttftMs, 800)
+    assert.equal(restored.models['p/m'].tokensPerSec, 50)
+  })
+
   it('summarizes entries for the API', () => {
     const store = createTelemetryStore()
     for (let i = 0; i < 10; i++) recordSuccess(store, 'p/m', { now: T0 })

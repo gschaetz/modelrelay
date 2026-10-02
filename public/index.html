@@ -5,8 +5,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ModelRelay</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="apple-touch-icon" href="/favicon.svg">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
     :root {
       --bg: #fdfcfb;
@@ -205,6 +206,27 @@
       margin-bottom: 32px;
       padding-bottom: 16px;
       border-bottom: 1px solid var(--border);
+    }
+
+    .dashboard-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .dashboard-logo {
+      width: 56px;
+      height: 56px;
+      flex: none;
+      border-radius: 12px;
+    }
+
+    @media (max-width: 600px) {
+      .dashboard-logo {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+      }
     }
 
     .dashboard-eyebrow {
@@ -1726,8 +1748,13 @@
   <div class="container">
     <div class="dashboard-header">
       <div>
-        <p class="dashboard-eyebrow">Router Control Center</p>
-        <h1 class="dashboard-heading">Dashboard</h1>
+        <div class="dashboard-brand">
+          <img class="dashboard-logo" src="/logo.png" width="56" height="56" alt="modelrelay">
+          <div>
+            <p class="dashboard-eyebrow">Router Control Center</p>
+            <h1 class="dashboard-heading">Dashboard</h1>
+          </div>
+        </div>
         <p class="dashboard-subtitle">Live model telemetry, provider health, and routing controls in one place.
         </p>
         <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.78rem; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
