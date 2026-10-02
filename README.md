@@ -1,8 +1,14 @@
-# 🚀 modelrelay
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/gschaetz/modelrelay/master/docs/assets/modelrelay-icon.png" alt="modelrelay" width="160">
+
+**[📚 Documentation](https://schaetzkc.com/modelrelay/)** · [npm](https://npmjs.com/package/@schaetzkc/modelrelay) · [Discord](https://discord.gg/AqX6Sawq5w)
 
 [![npm version](https://img.shields.io/npm/v/%40schaetzkc%2Fmodelrelay?color=green&style=flat-square)](https://npmjs.com/package/@schaetzkc/modelrelay)
 [![GitHub stars](https://img.shields.io/github/stars/gschaetz/modelrelay?style=flat-square)](https://github.com/gschaetz/modelrelay/stargazers)
 [![Join Discord](https://img.shields.io/badge/Join_Discord-5865F2?style=flat-square&logo=discord)](https://discord.gg/AqX6Sawq5w)
+
+</div>
 
 [**Join our Discord**](https://discord.gg/AqX6Sawq5w) for discussions, feature requests, and community support.
 
