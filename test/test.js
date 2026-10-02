@@ -3152,6 +3152,14 @@ describe('passive telemetry', () => {
     assert.deepEqual(normalizeTelemetryStore('garbage').models, {})
   })
 
+  it('reports failure counts decayed to the same moment as samples', () => {
+    const store = createTelemetryStore()
+    for (let i = 0; i < 4; i++) recordFailure(store, 'p/m', 'rateLimit', { now: T0 })
+    const summary = summarizeTelemetry(store, T0 + TELEMETRY_HALF_LIFE_MS)
+    assert.equal(summary['p/m'].samples, 2)
+    assert.equal(summary['p/m'].failures.rateLimit, 2)
+  })
+
   it('summarizes entries for the API', () => {
     const store = createTelemetryStore()
     for (let i = 0; i < 10; i++) recordSuccess(store, 'p/m', { now: T0 })
