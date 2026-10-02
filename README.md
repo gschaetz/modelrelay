@@ -7,7 +7,7 @@
 [**Join our Discord**](https://discord.gg/AqX6Sawq5w) for discussions, feature requests, and community support.
 
 <div align="center">
-  <img src="docs/assets/dashboard.png" alt="ModelRelay Dashboard" width="100%">
+  <img src="https://raw.githubusercontent.com/gschaetz/modelrelay/master/docs/assets/dashboard.png" alt="ModelRelay Dashboard" width="100%">
   <br/>
   <p><i>The smartest, fastest, and completely free local router for your AI coding needs.</i></p>
 </div>
@@ -63,334 +63,44 @@ docker compose up -d --build
 
 Once running, modelrelay is accessible at `http://localhost:7352/`.
 
-## 🔌 Installing Integrations
+## 🔌 Connect your tools
 
-Use `modelrelay onboard` to save provider keys and auto-configure integrations for OpenClaw or OpenCode.
+Run the guided setup to save provider keys and auto-configure OpenClaw or OpenCode:
 
 ```bash
 modelrelay onboard
 ```
 
-If you prefer manual setup, use the examples below.
+Prefer to configure by hand? See [Integrations](https://schaetzkc.com/modelrelay/integrations/) (OpenCode) and [OpenClaw](https://schaetzkc.com/modelrelay/openclaw/) for copy-paste configs.
 
-## OpenCode Integration
+## 🎯 Route by need, not by model name
 
-`modelrelay onboard` can auto-configure OpenCode.
+Free models come and go, so instead of hard-coding one, ask the router for what you need as the request's `model`:
 
-If you want manual setup, put this in `~/.config/opencode/opencode.json`:
+| Model | Routes to |
+|---|---|
+| `auto-fastest` | the best model overall |
+| `tag:coding` | the best available model carrying that tag (`coding`, `reasoning`, `general`, `fast`, `agentic`, or your own) |
+| `tag:coding+min_ctx:64k` | same, but only models with at least a 64k context window |
+| `auto-fastest+exclude:groq/qwen/qwen3.8-27b` | the best model, never that one |
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "router": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "modelrelay",
-      "options": {
-        "baseURL": "http://127.0.0.1:7352/v1",
-        "apiKey": "dummy-key"
-      },
-      "models": {
-        "auto-fastest": {
-          "name": "Auto Fastest"
-        }
-      }
-    }
-  },
-  "model": "router/auto-fastest"
-}
-```
+Details: [Routing](https://schaetzkc.com/modelrelay/routing/) and [Endpoints](https://schaetzkc.com/modelrelay/endpoints/).
 
-## OpenClaw Integration
+## 📊 Reliability-aware
 
-`modelrelay onboard` can auto-configure OpenClaw.
+modelrelay tracks how each provider/model behaves on your real requests (successes, rate limits, server errors, dropped streams, latency) and demotes models that keep failing, even if their health pings look fine. Only counts and timings are stored, locally. See [Telemetry](https://schaetzkc.com/modelrelay/telemetry/).
 
-If you want manual setup, merge this into `~/.openclaw/openclaw.json`:
+## 📚 Documentation
 
-```json
-{
-  "models": {
-    "providers": {
-      "modelrelay": {
-        "baseUrl": "http://127.0.0.1:7352/v1",
-        "api": "openai-completions",
-        "apiKey": "no-key",
-        "models": [
-          { "id": "auto-fastest", "name": "Auto Fastest" }
-        ]
-      }
-    }
-  },
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "modelrelay/auto-fastest"
-      },
-      "models": {
-        "modelrelay/auto-fastest": {}
-      }
-    }
-  }
-}
-```
+Full documentation lives at **[schaetzkc.com/modelrelay](https://schaetzkc.com/modelrelay/)**:
 
-### Routing options for OpenClaw: tags, `min_ctx` and `exclude`
-
-`auto-fastest` picks the best model overall, but an agent usually needs more than that: a model whose context window actually fits OpenClaw's prompt (system prompt + tool definitions + history), and often one suited to a particular job. modelrelay's routing selectors cover this, and OpenClaw doesn't need to know anything about them — it sends whatever model ID you register under the provider as the request's `model` field, so each selector is just another entry in the provider's `models` list.
-
-```json
-{
-  "models": {
-    "providers": {
-      "modelrelay": {
-        "baseUrl": "http://127.0.0.1:7352/v1",
-        "api": "openai-completions",
-        "apiKey": "no-key",
-        "models": [
-          { "id": "auto-fastest", "name": "Auto Fastest" },
-          { "id": "auto-fastest+min_ctx:128k", "name": "Auto Fastest (128k+)", "contextWindow": 131072 },
-          { "id": "tag:coding+min_ctx:64k", "name": "Coding (64k+)", "contextWindow": 65536 },
-          { "id": "tag:general+min_ctx:32000", "name": "General (32k+)", "contextWindow": 32000 }
-        ]
-      }
-    }
-  },
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "modelrelay/tag:coding+min_ctx:64k"
-      },
-      "models": {
-        "modelrelay/tag:coding+min_ctx:64k": {},
-        "modelrelay/auto-fastest+min_ctx:128k": {},
-        "modelrelay/tag:general+min_ctx:32000": {}
-      }
-    }
-  }
-}
-```
-
-How the selectors behave (full details under [Endpoints](#endpoints) and [Model tags](#model-tags)):
-
-- **`tag:<name>`** routes to the best currently available model carrying that tag. The free models behind modelrelay come and go, so a tag keeps working when a specific model disappears. Curated tags are `coding`, `reasoning`, `general`, `fast` and `agentic`; you can add your own in the Web UI.
-- **`+min_ctx:<size>`** drops models whose context window is smaller than `<size>` (a token count, or a `k`/`m` suffix) or unknown, before ranking. Pick a value comfortably above what your OpenClaw sessions send — agent prompts with tools grow quickly, so `32k` is a floor and `64k`–`128k` is safer for long sessions. modelrelay also tightens this automatically: if it has seen a provider's real rate-limit quota for a model and it's lower than the advertised context, the lower number is used.
-- **`+exclude:<id1|id2>`** steers away from specific models, by bare model ID or `provider/modelId`, e.g. `tag:coding+min_ctx:64k+exclude:groq/qwen/qwen3.8-27b`. Modifiers combine in either order.
-- **Set `contextWindow` to match `min_ctx`.** Without it OpenClaw assumes a default window (128k) for these entries, which can be larger than the floor you asked modelrelay for; setting it to the same size keeps OpenClaw's own context budgeting honest.
-- **Models you want to use must be listed under `agents.defaults.models`** as well as under the provider — a provider entry that isn't also in that map doesn't appear in `openclaw models list`.
-- A modifier modelrelay doesn't recognize is ignored rather than rejected, so check the Web UI's request log if a selector doesn't seem to be filtering as you expect.
-
-After editing `~/.openclaw/openclaw.json`, restart OpenClaw so it picks up the new model entries. `modelrelay onboard` only writes the plain `auto-fastest` entry today; the selectors above are added by hand.
-
-## CLI
-
-```bash
-modelrelay [--port <number>] [--log] [--ban <model1,model2>]
-modelrelay onboard [--port <number>]
-modelrelay install --autostart
-modelrelay start --autostart
-modelrelay uninstall --autostart
-modelrelay status --autostart
-modelrelay update
-modelrelay autoupdate [--enable|--disable|--status] [--interval <hours>]
-modelrelay autostart [--install|--start|--uninstall|--status]
-modelrelay config export
-modelrelay config import <token>
-```
-
-Request terminal logging is disabled by default. Use `--log` to enable it.
-
-`modelrelay install --autostart` also triggers an immediate start attempt so you do not need a separate command after install.
-
-During `modelrelay onboard`, you will also be prompted to enable auto-start on login.
-
-`modelrelay update` upgrades the global npm package and, when autostart is configured, stops the background service first and starts it again after the update.
-
-Auto-update is enabled by default. While the router is running, modelrelay checks npm periodically (default: every 24 hours) and applies updates automatically.
-
-Use `modelrelay autoupdate --status` to inspect state, `modelrelay autoupdate --disable` to turn it off, and `modelrelay autoupdate --enable --interval 12` to re-enable with a custom interval.
-
-Use `modelrelay config export` to print a transferable config token (base64url-encoded JSON), and `modelrelay config import <token>` to load it on another machine.
-You can also import by stdin:
-
-```bash
-modelrelay config export | modelrelay config import
-```
-
-## Endpoints
-
-### `/v1/chat/completions`
-
-`POST /v1/chat/completions` is an OpenAI-compatible chat completions endpoint.
-
-- Use `model: "auto-fastest"` to route to the best model overall
-- Use a grouped model ID such as `minimax-m2.5`, `kimi-k2.5`, or `glm4.7` to route within that model group
-- For grouped IDs, modelrelay selects the provider with the best current QoS for that group
-- Use `model: "tag:<name>"` (e.g. `tag:coding`) to route to the best currently available model carrying that tag — either a curated capability tag or a custom tag you've assigned in the Web UI (see [Model tags](#model-tags)). This is useful because the free models behind modelrelay come and go as availability changes — routing by tag survives a given model disappearing, where routing by a specific model/group ID does not.
-- Append `+min_ctx:<size>` to `tag:<name>` or `auto-fastest` to additionally require a minimum context window, e.g. `tag:general+min_ctx:32000` or `auto-fastest+min_ctx:128k`. `<size>` accepts a raw token count or a `k`/`m` suffix. Models whose context window can't be determined, or is smaller than the requirement, are excluded. See [Model tags](#model-tags).
-- In the Web UI, pinned models can now use either `Canonical Group` mode (default, pins the same model across providers) or `Exact Provider Row` mode from `Settings`
-- Streaming and non-streaming requests are both supported
-
-### `/v1/models`
-
-`GET /v1/models` returns the models exposed by the router.
-
-- Model IDs are grouped slugs such as `minimax-m2.5`, `kimi-k2.5`, and `glm4.7`
-- Each grouped ID can represent the same model across multiple providers
-- When you select one of these IDs in `/v1/chat/completions`, modelrelay routes the request to the provider with the best current QoS for that model group
-- `auto-fastest` is also exposed and routes to the best model overall
-- Each entry includes a `tags` array combining curated capability tags with any user-defined tags (see [Model tags](#model-tags))
-
-Example:
-
-```json
-{
-  "object": "list",
-  "data": [
-    { "id": "auto-fastest", "object": "model", "owned_by": "router" },
-    { "id": "minimax-m2.5", "object": "model", "owned_by": "relay", "tags": ["agentic", "general", "coding"] },
-    { "id": "kimi-k2.5", "object": "model", "owned_by": "relay", "tags": ["agentic", "coding", "general"] },
-    { "id": "glm4.7", "object": "model", "owned_by": "relay", "tags": ["agentic", "coding", "general"] }
-  ]
-}
-```
-
-### Model tags
-
-Every model carries one or more capability tags, combined from two sources:
-
-- **Curated tags** come from a fixed vocabulary — `coding`, `reasoning`, `general`, `fast`, `agentic` — maintained by project maintainers in `tags.js`.
-- **Custom tags** are freeform labels you assign yourself. In the Web UI, open a model row and edit **Custom Routing Tags**. Assignments are keyed to the canonical model, shared across its providers, and stored in `~/.modelrelay.json`.
-
-Use `model: "tag:<name>"` in `/v1/chat/completions` to route to the best currently available model carrying that tag — curated or custom — instead of naming a specific model. For example, assign `coding` to a few models in the UI, then request `model: "tag:coding"`; normal QoS ranking, availability filtering, and retry behavior choose the best currently eligible tagged model.
-
-#### Minimum context window (`min_ctx`)
-
-Tag membership alone doesn't guarantee a model can fit your prompt — a tag can span models with very different context windows. Append `+min_ctx:<size>` to filter those out before QoS ranking runs:
-
-- `tag:general+min_ctx:32000` — best available `general`-tagged model with at least 32,000 tokens of context
-- `tag:coding+min_ctx:128k` — same, for `coding`, using the `k` shorthand
-- `auto-fastest+min_ctx:1m` — fastest model overall with at least 1,000,000 tokens of context, no tag restriction
-
-`<size>` accepts a plain token count (`32000`) or a `k`/`m` suffix (`32k`, `1m`). Models with no known context window, or a smaller one than requested, are excluded from consideration. An unparseable or unrecognized modifier is ignored, falling back to the unmodified `tag:<name>` or `auto-fastest` behavior rather than erroring.
-
-Modelrelay uses context data reported by the selected provider when it is available. Otherwise, it uses a provider-specific curated value from `sources.js`. It does not copy a context size between providers. It also keeps the context unknown when neither source has a value. For Ollama, the allocated or configured context is usable for this filter. The model maximum alone is not sufficient.
-
-A provider's reported (or curated) context window is an upper bound, not a guarantee — some providers advertise a much larger window than a given account can actually push through in one request (seen live on newly-listed Groq models whose real per-minute token quota was a fraction of their reported context). When modelrelay has already observed a live rate-limit reading for a model (from that provider's response headers, captured on any prior request whether it succeeded or failed), `min_ctx` matching uses the smaller of the reported context and that observed quota. This is populated automatically as requests happen; there's nothing to configure, and it only ever makes filtering stricter, never looser.
-
-#### Excluding specific models (`exclude`)
-
-Append `+exclude:<id1|id2>` to `tag:<name>` or `auto-fastest` to steer a request away from one or more specific models, by bare model ID or provider-qualified `provider/modelId` key, separated by `|`:
-
-- `tag:general+exclude:groq/qwen/qwen3.8-27b` — best `general`-tagged model, never that exact provider row
-- `auto-fastest+exclude:qwen/qwen3.8-27b|qwen/qwen3.6-27b` — fastest model overall, excluding those two by bare ID across any provider
-
-This composes with `min_ctx` in either order (e.g. `tag:general+min_ctx:32000+exclude:groq/qwen/qwen3.8-27b`), and follows the same matching and case-insensitivity rules as modelrelay's own internal per-request retry exclusion. Note: nothing in modelrelay's own proxy config today populates this dynamically on your behalf — it's a primitive for a caller that already knows a specific model ID it wants to avoid (for example, a retry layer that read the failed model out of a prior response), not something that reacts to failures automatically by itself. For automatic retry-with-a-different-model behavior on a single request, see how `auto-fastest`/`tag:<name>` already retry internally across candidates when a request fails.
-
-### QoS: how speed and quality are weighed
-
-`auto-fastest`, grouped-ID, and `tag:<name>` routing all rank eligible candidates by a QoS score that blends a model's quality (its `intell` percentile among all known models) with its recently observed average latency. Latency is scored continuously and never fully bottoms out at zero — a model averaging 1.1s and one averaging 4 minutes are not treated as equivalent just because both are technically "up" and returning HTTP 200. The latency discount is `target / (target + avg)`: an instant response scores 1.0, a model averaging exactly the configured target scores 0.5, and the score keeps decaying continuously past that — but it always remains a nonzero (last-resort) candidate rather than being excluded outright. Exclusion is still a separate, explicit action (ban a model, or set a minimum coding score / excluded providers list).
-
-The target is `qosLatencyTargetMs`, configurable in the Web UI under **Settings → QoS Latency Target (ms)** (default: 3000ms). Lower it to weight speed more heavily against quality; raise it to let quality dominate over a wider range of observed latencies. It applies uniformly to `auto-fastest`, `tag:<name>`, grouped-ID, and pinned-model routing.
-
-## Config
-
-- Router config file: `~/.modelrelay.json`
-- API key env overrides:
-  - `NVIDIA_API_KEY`
-  - `GROQ_API_KEY`
-  - `CEREBRAS_API_KEY`
-  - `SAMBANOVA_API_KEY`
-- `OPENROUTER_API_KEY`
-- `OPENCODE_API_KEY`
-- `OLLAMA_API_KEY`
-- `OLLAMA_BASE_URL`
-- `OLLAMA_MODEL`
-  - `CODESTRAL_API_KEY`
-  - `HYPERBOLIC_API_KEY`
-  - `SCALEWAY_API_KEY`
-  - `KIRO_REFRESH_TOKEN`
-  - `KIRO_OAUTH_CLIENT_ID` (optional, for AWS Builder/IDC refresh flow)
-  - `KIRO_OAUTH_CLIENT_SECRET` (optional, for AWS Builder/IDC refresh flow)
-  - `GOOGLE_API_KEY`
-
-Kiro OAuth notes:
-- Base endpoint is preconfigured to `https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse`
-- Current Kiro model IDs include `claude-sonnet-4.5` and `claude-haiku-4.5`
-- Authentication uses OAuth access tokens refreshed from:
-  - `KIRO_REFRESH_TOKEN`, or
-  - `~/.aws/sso/cache` (auto-detected refresh token), following OmniRoute’s approach.
-
-For hosted Ollama, set `OLLAMA_API_KEY` and optionally override `OLLAMA_BASE_URL` / `OLLAMA_MODEL`.
-If you leave the Ollama base URL blank in the UI, modelrelay defaults to `https://ollama.com/v1`.
-With a valid Ollama API key, modelrelay will discover available Ollama models automatically.
-If you point Ollama at a local host such as `http://127.0.0.1:11434`, modelrelay will also auto-discover models and does not require an API key.
-
-### OpenAI-Compatible endpoints
-
-modelrelay supports configuring multiple OpenAI-compatible upstream endpoints (vLLM, llama.cpp, custom relays, etc.). Each endpoint exposes a single model id and is routed independently.
-
-- In the Web UI, click `+ Add Endpoint` under the **OpenAI-Compatible endpoints** group, supply a name, base URL, model id, and optional API key. Each endpoint then gets its own provider row with status, ping, and rate-limit information.
-- modelrelay automatically probes `/v1/models` on each endpoint and exposes every returned model as a routable row. The manually configured model id (if any) is merged in as a fallback. Discovery is on by default and can be toggled per-endpoint with the **"Discover models from `/v1/models`"** checkbox.
-- Endpoints are stored in `~/.modelrelay.json` under composite keys like `openai-compatible:my-vllm`:
-  ```jsonc
-  {
-    "apiKeys": {
-      "openai-compatible:my-vllm": "sk-…",
-      "openai-compatible:groq-clone": "sk-…"
-    },
-    "providers": {
-      "openai-compatible:my-vllm":    { "enabled": true, "name": "Local vLLM", "baseUrl": "http://localhost:8000/v1", "modelId": "qwen-coder" },
-      "openai-compatible:groq-clone": { "enabled": true, "name": "Groq Clone", "baseUrl": "https://example/v1",        "modelId": "llama-3.3-70b" }
-    }
-  }
-  ```
-- Legacy single-endpoint configs (a bare `openai-compatible` entry without an instance suffix) are migrated automatically to `openai-compatible:default` on first run.
-- The legacy env vars `OPENAI_COMPATIBLE_API_KEY` / `OPENAI_COMPATIBLE_BASE_URL` / `OPENAI_COMPATIBLE_MODEL` continue to work and apply to the `:default` instance.
-- Endpoints can also be managed via the API: `POST /api/openai-compatible/endpoints` (body: `{name, baseUrl, modelId, apiKey?}`) and `DELETE /api/openai-compatible/endpoints/<id>`.
-
-### Config migration (CLI + Web UI)
-
-- In the Web UI, open `Settings` -> `Configuration Transfer` to export/copy/import a token.
-- The token includes your full config (including API keys, provider toggles, pinning mode, bans, filter rules, and auto-update settings).
-- Treat tokens as secrets. Anyone with the token can import your keys/settings.
-- Alternative: copy the config file directly from `~/.modelrelay.json` to the other machine at the same path (`~/.modelrelay.json`).
-
-## Troubleshooting
-
-### Clicking the update button or running `modelrelay` won't perform an update
-
-To trigger a manual npm update and restart the service, run:
-
-```bash
-npm i -g @schaetzkc/modelrelay@latest
-modelrelay autostart --start
-```
-
-### Testing updates locally without publishing to npm
-
-You can point the updater at a local tarball instead of the npm registry:
-
-```bash
-npm pack
-MODELRELAY_UPDATE_TARBALL=./modelrelay-1.8.3.tgz pnpm start
-```
-
-If you want the Web UI to always show an update while testing, set a higher forced version:
-
-```bash
-MODELRELAY_FORCE_UPDATE_VERSION=9.9.9
-```
-
-If the tarball filename does not contain a semantic version, also set:
-
-```bash
-MODELRELAY_UPDATE_VERSION=1.8.3
-```
-
-When `MODELRELAY_UPDATE_TARBALL` is set, the Web UI update flow and `modelrelay update`
-install from that tarball and bypass the normal Git checkout update block. This is for
-local testing only. `MODELRELAY_FORCE_UPDATE_VERSION` only affects version detection; the
-actual install still comes from the tarball path.
+- [Integrations](https://schaetzkc.com/modelrelay/integrations/) and [OpenClaw](https://schaetzkc.com/modelrelay/openclaw/)
+- [CLI](https://schaetzkc.com/modelrelay/cli/) — commands, autostart, auto-update, config export/import
+- [Endpoints](https://schaetzkc.com/modelrelay/endpoints/) — `/v1/chat/completions` and `/v1/models`
+- [Routing](https://schaetzkc.com/modelrelay/routing/) — tags, `min_ctx`, `exclude`, QoS
+- [Telemetry](https://schaetzkc.com/modelrelay/telemetry/)
+- [Configuration](https://schaetzkc.com/modelrelay/configuration/) — config file, environment variables, OpenAI-compatible endpoints
+- [Troubleshooting](https://schaetzkc.com/modelrelay/troubleshooting/)
 
 ---
 
