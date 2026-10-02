@@ -17,6 +17,7 @@ For every request routed through `/v1/chat/completions`, per `provider/modelId`:
   - `serverError` — HTTP 5xx or 410
   - `network` — the request never got a response
   - `midstream` — the upstream returned 200 but ended the stream on an error-shaped first chunk
+  - `unsupported` — the provider rejected the request's schema or tools with a 400/422 (for example an unsupported JSON Schema keyword in a tool definition); see [automatic failover](endpoints.md#automatic-failover)
 
 Caller-side errors (400, 401, 404, 422 and similar) are **not** counted against a model, since they would fail on any model.
 

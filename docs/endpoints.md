@@ -17,6 +17,18 @@ nav_order: 5
 - In the Web UI, pinned models can now use either `Canonical Group` mode (default, pins the same model across providers) or `Exact Provider Row` mode from `Settings`
 - Streaming and non-streaming requests are both supported
 
+## Automatic failover
+
+If the chosen model fails, modelrelay retries the same request on a different candidate (up to 6 attempts in total, never repeating a model within one request). It fails over on:
+
+- HTTP 429, 5xx and 410 responses
+- network errors
+- a 400/403 whose body looks like a rate-limit or quota error (some providers report over-capacity this way)
+- a stream that returns 200 but ends on an error-shaped first chunk
+- a 400/422 where the provider can't handle part of the request itself, such as a tool definition using a JSON Schema keyword its structured-output compiler doesn't support (e.g. `uniqueItems`) or a model that doesn't support tools
+
+Other client errors, such as a genuinely malformed request, are returned to the caller immediately. If every attempt fails, the last error is returned. See [Telemetry](telemetry.md) for how failures count against a model's routing score.
+
 ## `/v1/models`
 
 `GET /v1/models` returns the models exposed by the router.

@@ -20,6 +20,7 @@ import {
   DEFAULT_QOS_LATENCY_TARGET_MS,
   buildModelGroups,
   filterModelsByRequested,
+  isProviderRequestRejectionError,
   isRateLimitShapedError,
   isRetryableProxyStatus,
   isErrorShapedFirstSseEvent,
@@ -3177,5 +3178,38 @@ describe('QoS reliability option', () => {
     const baseline = rankModelsForRouting([a, b])
     const demoted = rankModelsForRouting([a, b], [], { reliabilityFor: r => (r.modelId === baseline[0].modelId ? 0.25 : 1) })
     assert.equal(demoted[0].modelId, baseline[1].modelId)
+  })
+})
+
+
+describe('isProviderRequestRejectionError', () => {
+  const live = '{"error":{"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"code\\":\\"400\\",\\"message\\":\\"stream error: rpc error: code = InvalidArgument desc = grammar does not compile: xgrammar StructuralTag compilation failed: unsupported schema keyword: uniqueItems\\"}}"}}}'
+
+  it('detects the live qwen/ModelRun uniqueItems rejection', () => {
+    assert.equal(isProviderRequestRejectionError(400, live), true)
+  })
+
+  it('detects other schema/tool capability rejections on 400 and 422', () => {
+    assert.equal(isProviderRequestRejectionError(400, 'unsupported schema keyword: patternProperties'), true)
+    assert.equal(isProviderRequestRejectionError(422, 'This model does not support tools'), true)
+    assert.equal(isProviderRequestRejectionError(400, 'tool_choice is not supported for this model'), true)
+    assert.equal(isProviderRequestRejectionError(400, 'Failed to compile JSON schema'), true)
+  })
+
+  it('does not treat ordinary malformed-request errors as provider rejections', () => {
+    assert.equal(isProviderRequestRejectionError(400, 'Invalid request: "messages" field is required'), false)
+    assert.equal(isProviderRequestRejectionError(400, '{"error":"missing required parameter model"}'), false)
+    assert.equal(isProviderRequestRejectionError(400, 'max_tokens must be a positive integer'), false)
+  })
+
+  it('ignores other statuses and empty bodies', () => {
+    assert.equal(isProviderRequestRejectionError(500, 'grammar does not compile'), false)
+    assert.equal(isProviderRequestRejectionError(200, 'grammar does not compile'), false)
+    assert.equal(isProviderRequestRejectionError(400, ''), false)
+    assert.equal(isProviderRequestRejectionError(400, null), false)
+  })
+
+  it('is not mistaken for a rate limit', () => {
+    assert.equal(isRateLimitShapedError(400, live), false)
   })
 })
