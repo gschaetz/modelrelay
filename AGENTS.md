@@ -10,6 +10,28 @@ After completing any feature or fix, the agent MUST:
 
 This ensures the codebase remains in a working state at all times.
 
+## Documentation Sync (MANDATORY)
+
+User-facing reference documentation lives in `docs/` (one page per topic) and the `README.md` is the landing page (pitch, install, quick start, links into `docs/`). The two MUST stay in sync:
+
+1. **Any change to user-facing behavior updates the matching `docs/` page in the same commit.** That includes routing selectors, endpoints, CLI flags, config keys and environment variables, integrations, and anything exposed under `/api/`. A feature or fix without its docs update is not done.
+2. **If the README also covers the topic, update it in the same commit.** Do not let the README and `docs/` disagree. Keep one source of truth per topic: the README summarizes and links to the `docs/` page instead of restating the details.
+3. **Keep generated snippets in sync too.** `lib/onboard.js` prints config snippets (OpenClaw, OpenCode, PicoClaw) that duplicate the examples in `docs/integrations.md`, `docs/openclaw.md` and the README. Change them together.
+4. **Before finishing, check the docs.** Run a quick `grep` of `README.md` and `docs/` for any flag, endpoint, key or selector you changed, and confirm no stale mention remains. Verify internal links between `docs/` pages still resolve.
+5. **Releases:** the npm package page shows the README as of the last published version, so README changes only reach npm on the next release. `docs/` is not part of the npm package (it is not in `files`).
+
+| Topic | Page |
+|---|---|
+| Install, quick start | `README.md` |
+| `modelrelay onboard`, OpenCode | `docs/integrations.md` |
+| OpenClaw setup and routing selectors | `docs/openclaw.md` |
+| CLI commands, autostart, auto-update | `docs/cli.md` |
+| `/v1/chat/completions`, `/v1/models` | `docs/endpoints.md` |
+| Tags, `min_ctx`, `exclude`, QoS | `docs/routing.md` |
+| Telemetry, `/api/telemetry` | `docs/telemetry.md` |
+| Config file, env vars, OpenAI-compatible endpoints | `docs/configuration.md` |
+| Update and local-testing troubleshooting | `docs/troubleshooting.md` |
+
 ## Git Commits
 
 When making a commit on behalf of the user, NEVER prefix your commit message with `fix:`, `feature:`, `feat:`, `chore:`, or any other prefix. 
