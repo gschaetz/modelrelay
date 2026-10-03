@@ -30,6 +30,7 @@ User-facing reference documentation lives in `docs/` (one page per topic) and th
 | `/v1/chat/completions`, `/v1/models` | `docs/endpoints.md` |
 | Tags, `min_ctx`, `exclude`, QoS | `docs/routing.md` |
 | Telemetry, `/api/telemetry` | `docs/telemetry.md` |
+| Dashboard UI, search syntax, filters, request logs | `docs/dashboard.md` |
 | Config file, env vars, OpenAI-compatible endpoints | `docs/configuration.md` |
 | Update and local-testing troubleshooting | `docs/troubleshooting.md` |
 

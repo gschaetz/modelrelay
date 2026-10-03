@@ -20,6 +20,7 @@ import {
   DEFAULT_QOS_LATENCY_TARGET_MS,
   buildModelGroups,
   filterModelsByRequested,
+  getEffectiveContext,
   isCompleteSseStream,
   isProviderRequestRejectionError,
   isRateLimitShapedError,
@@ -33,7 +34,8 @@ import {
   selectNextApiKeyFromPool,
   VERDICT_ORDER,
 } from '../lib/utils.js'
-import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
+import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, summarizeTelemetryEntry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
+import '../public/model-search.js'
 import { OPENCLAW_ROUTING_PRESETS, applyOpenClawConfig, buildOpenClawProviderConfig } from '../lib/onboard.js'
 import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { buildOpenRouterQualityIndex, fitLinearRegression, qualityLookupKeys, resolveModelQuality } from '../lib/model-quality.js'
@@ -3295,5 +3297,163 @@ describe('isCompleteSseStream', () => {
 
   it('ignores comment lines and non-data events', () => {
     assert.equal(isCompleteSseStream(`: keep-alive\n\nevent: ping\n\n${chunk({ content: 'x' })}`), false)
+  })
+})
+
+
+describe('getEffectiveContext', () => {
+  it('uses the reported window when there is no observed quota', () => {
+    assert.deepEqual(getEffectiveContext({ ctx: '128k' }), { tokens: 128000, reportedTokens: 128000, quotaTokens: null, capped: false, usable: true, reason: 'reported' })
+  })
+
+  it('caps the window at the observed per-minute token quota', () => {
+    const info = getEffectiveContext({ ctx: '131072', rateLimit: { limitTokens: 8000 } })
+    assert.equal(info.tokens, 8000)
+    assert.equal(info.reportedTokens, 131072)
+    assert.equal(info.capped, true)
+    assert.equal(info.reason, 'quota')
+  })
+
+  it('does not cap when the quota is larger than the reported window', () => {
+    const info = getEffectiveContext({ ctx: '32k', rateLimit: { limitTokens: 500000 } })
+    assert.equal(info.tokens, 32000)
+    assert.equal(info.capped, false)
+  })
+
+  it('is unusable when the context is only the model maximum or unknown', () => {
+    const max = getEffectiveContext({ ctx: '200k', ctxSource: 'model-maximum' })
+    assert.equal(max.usable, false)
+    assert.equal(max.reason, 'model-maximum')
+    assert.equal(max.tokens, null)
+    const unknown = getEffectiveContext({ ctx: null })
+    assert.equal(unknown.usable, false)
+    assert.equal(unknown.reason, 'unknown')
+  })
+
+  it('ignores non-positive or non-numeric quotas', () => {
+    assert.equal(getEffectiveContext({ ctx: '64k', rateLimit: { limitTokens: 0 } }).tokens, 64000)
+    assert.equal(getEffectiveContext({ ctx: '64k', rateLimit: { limitTokens: '8000' } }).capped, false)
+  })
+})
+
+describe('summarizeTelemetryEntry', () => {
+  it('returns null when nothing has been recorded', () => {
+    assert.equal(summarizeTelemetryEntry(undefined), null)
+    assert.equal(summarizeTelemetryEntry(null), null)
+  })
+
+  it('matches the per-key summary used by the API', () => {
+    const store = createTelemetryStore()
+    const now = 1_700_000_000_000
+    for (let i = 0; i < 8; i++) recordSuccess(store, 'p/m', { ttftMs: 900, durationMs: 2900, completionTokens: 100, now })
+    recordFailure(store, 'p/m', 'rateLimit', { now })
+    assert.deepEqual(summarizeTelemetryEntry(store.models['p/m'], now), summarizeTelemetry(store, now)['p/m'])
+  })
+})
+
+
+describe('dashboard search and filters', () => {
+  const S = globalThis.ModelRelaySearch
+  const model = (overrides = {}) => ({
+    label: 'Qwen 3.8 27B', providerKey: 'groq', modelId: 'qwen/qwen3.8-27b', status: 'up',
+    tags: ['coding', 'general'], userTags: ['favorite'],
+    ctxInfo: { usable: true, tokens: 131072 },
+    ...overrides,
+  })
+
+  it('exposes the module on globalThis', () => {
+    assert.equal(typeof S.parseSearch, 'function')
+  })
+
+  it('parses plain and structured terms', () => {
+    const p = S.parseSearch('qwen tag:coding provider:groq status:up min_ctx:64k')
+    assert.deepEqual(p.terms, ['qwen'])
+    assert.deepEqual(p.tags, ['coding'])
+    assert.deepEqual(p.providers, ['groq'])
+    assert.deepEqual(p.statuses, ['up'])
+    assert.equal(p.minCtx, 64000)
+    assert.equal(p.structured, 4)
+  })
+
+  it('accepts ctx aliases and >= forms, keeping the largest', () => {
+    assert.equal(S.parseSearch('ctx:32k').minCtx, 32000)
+    assert.equal(S.parseSearch('ctx>=64k').minCtx, 64000)
+    assert.equal(S.parseSearch('context:>=1m').minCtx, 1000000)
+    assert.equal(S.parseSearch('ctx:32k min_ctx:128k').minCtx, 128000)
+  })
+
+  it('accepts comma separated tags and treats unknown keys or bad sizes as plain text', () => {
+    assert.deepEqual(S.parseSearch('tag:coding,reasoning').tags, ['coding', 'reasoning'])
+    assert.deepEqual(S.parseSearch('foo:bar').terms, ['foo:bar'])
+    assert.deepEqual(S.parseSearch('ctx:lots').terms, ['ctx:lots'])
+    assert.deepEqual(S.parseSearch('').terms, [])
+    assert.deepEqual(S.parseSearch(null).terms, [])
+  })
+
+  it('matches plain terms against label, provider, id and tags, all required', () => {
+    const p = (q) => S.parseSearch(q)
+    assert.equal(S.matchesModel(model(), p('qwen')), true)
+    assert.equal(S.matchesModel(model(), p('GROQ')), true)
+    assert.equal(S.matchesModel(model(), p('favorite')), true)
+    assert.equal(S.matchesModel(model(), p('qwen groq')), true)
+    assert.equal(S.matchesModel(model(), p('qwen nvidia')), false)
+  })
+
+  it('filters by tag, including custom tags, and requires all tags', () => {
+    const p = (q) => S.parseSearch(q)
+    assert.equal(S.matchesModel(model(), p('tag:coding')), true)
+    assert.equal(S.matchesModel(model(), p('tag:favorite')), true)
+    assert.equal(S.matchesModel(model(), p('tag:coding,reasoning')), false)
+    assert.equal(S.matchesModel(model(), p('tag:cod')), false)
+  })
+
+  it('combines filter-bar tags and min context with the search box', () => {
+    const p = S.parseSearch('tag:coding')
+    assert.equal(S.matchesModel(model(), p, { tags: ['general'] }), true)
+    assert.equal(S.matchesModel(model(), p, { tags: ['reasoning'] }), false)
+    assert.equal(S.matchesModel(model(), S.parseSearch(''), { minCtx: 128000 }), true)
+    assert.equal(S.matchesModel(model(), S.parseSearch('ctx:32k'), { minCtx: 256000 }), false)
+  })
+
+  it('applies min context to the effective window and excludes unusable context', () => {
+    const p = S.parseSearch('ctx:64k')
+    assert.equal(S.matchesModel(model({ ctxInfo: { usable: true, tokens: 8000 } }), p), false)
+    assert.equal(S.matchesModel(model({ ctxInfo: { usable: false, tokens: null } }), p), false)
+    assert.equal(S.matchesModel(model({ ctxInfo: undefined }), p), false)
+    assert.equal(S.matchesModel(model({ ctxInfo: { usable: false, tokens: null } }), S.parseSearch('qwen')), true)
+  })
+
+  it('filters by provider and status', () => {
+    assert.equal(S.matchesModel(model(), S.parseSearch('provider:gro')), true)
+    assert.equal(S.matchesModel(model(), S.parseSearch('provider:nvidia')), false)
+    assert.equal(S.matchesModel(model({ status: 'down' }), S.parseSearch('status:up')), false)
+    assert.equal(S.matchesModel(model({ status: 'down' }), S.parseSearch('status:down')), true)
+  })
+
+  it('formats and snaps token counts', () => {
+    assert.equal(S.formatTokens(131072), '131K')
+    assert.equal(S.formatTokens(1000000), '1M')
+    assert.equal(S.formatTokens(8000), '8K')
+    assert.equal(S.formatTokens(null), 'N/A')
+    assert.equal(S.presetForTokens(131072), 128000)
+    assert.equal(S.presetForTokens(8000), 8000)
+    assert.equal(S.presetForTokens(4000), null)
+  })
+
+  it('counts active filters', () => {
+    assert.equal(S.activeFilterCount(S.parseSearch(''), {}, 0), 0)
+    assert.equal(S.activeFilterCount(S.parseSearch('qwen tag:coding'), { tags: ['fast'], minCtx: 64000 }, 2), 1 + 1 + 1 + 1 + 2)
+  })
+
+  it('round-trips UI state and rejects malformed saved state', () => {
+    const state = { search: 'tag:coding', sort: { col: 'ctx', dir: 'desc' }, unchecked: { provider: ['groq'], status: ['down'] }, tags: ['fast'], minCtx: 64000 }
+    assert.deepEqual(S.parseUiState(S.serializeUiState(state)), state)
+    const empty = { search: '', sort: null, unchecked: {}, tags: [], minCtx: null }
+    assert.deepEqual(S.parseUiState('not json'), empty)
+    assert.deepEqual(S.parseUiState(null), empty)
+    assert.deepEqual(S.parseUiState('{"v":99}'), empty)
+    assert.equal(S.parseUiState(JSON.stringify({ v: 1, sort: { col: 'bogus', dir: 'asc' } })).sort, null)
+    assert.deepEqual(S.parseUiState(JSON.stringify({ v: 1, tags: [1, 'ok'], minCtx: -5 })).tags, ['ok'])
+    assert.equal(S.parseUiState(JSON.stringify({ v: 1, minCtx: -5 })).minCtx, null)
   })
 })
