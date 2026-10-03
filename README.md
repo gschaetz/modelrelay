@@ -105,6 +105,7 @@ Full documentation lives at **[schaetzkc.com/modelrelay](https://schaetzkc.com/m
 - [Endpoints](https://schaetzkc.com/modelrelay/endpoints/) — `/v1/chat/completions` and `/v1/models`
 - [Routing](https://schaetzkc.com/modelrelay/routing/) — tags, `min_ctx`, `exclude`, QoS
 - [Telemetry](https://schaetzkc.com/modelrelay/telemetry/)
+- [Dashboard](https://schaetzkc.com/modelrelay/dashboard/) — columns, search syntax, filters, request logs
 - [Configuration](https://schaetzkc.com/modelrelay/configuration/) — config file, environment variables, OpenAI-compatible endpoints
 - [Troubleshooting](https://schaetzkc.com/modelrelay/troubleshooting/)
 

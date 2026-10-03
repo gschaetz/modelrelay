@@ -33,6 +33,8 @@ Routing multiplies a model's QoS score (see [Routing](routing.md#qos-how-speed-a
 
 ## Viewing it
 
+In the [dashboard](dashboard.md), the Models table has a **Reliability** column and each model's drawer shows the full breakdown.
+
 `GET /api/telemetry` returns the current per-model summary:
 
 ```json

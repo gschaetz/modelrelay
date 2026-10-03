@@ -20,6 +20,9 @@ import {
   DEFAULT_QOS_LATENCY_TARGET_MS,
   buildModelGroups,
   filterModelsByRequested,
+  getEffectiveContext,
+  MAX_REQUESTED_MODEL_LENGTH,
+  normalizeRequestedModel,
   isCompleteSseStream,
   isProviderRequestRejectionError,
   isRateLimitShapedError,
@@ -33,7 +36,8 @@ import {
   selectNextApiKeyFromPool,
   VERDICT_ORDER,
 } from '../lib/utils.js'
-import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
+import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, summarizeTelemetryEntry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
+import '../public/model-search.js'
 import { OPENCLAW_ROUTING_PRESETS, applyOpenClawConfig, buildOpenClawProviderConfig } from '../lib/onboard.js'
 import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { buildOpenRouterQualityIndex, fitLinearRegression, qualityLookupKeys, resolveModelQuality } from '../lib/model-quality.js'
@@ -3295,5 +3299,287 @@ describe('isCompleteSseStream', () => {
 
   it('ignores comment lines and non-data events', () => {
     assert.equal(isCompleteSseStream(`: keep-alive\n\nevent: ping\n\n${chunk({ content: 'x' })}`), false)
+  })
+})
+
+
+describe('getEffectiveContext', () => {
+  it('uses the reported window when there is no observed quota', () => {
+    assert.deepEqual(getEffectiveContext({ ctx: '128k' }), { tokens: 128000, reportedTokens: 128000, quotaTokens: null, capped: false, usable: true, reason: 'reported' })
+  })
+
+  it('caps the window at the observed per-minute token quota', () => {
+    const info = getEffectiveContext({ ctx: '131072', rateLimit: { limitTokens: 8000 } })
+    assert.equal(info.tokens, 8000)
+    assert.equal(info.reportedTokens, 131072)
+    assert.equal(info.capped, true)
+    assert.equal(info.reason, 'quota')
+  })
+
+  it('does not cap when the quota is larger than the reported window', () => {
+    const info = getEffectiveContext({ ctx: '32k', rateLimit: { limitTokens: 500000 } })
+    assert.equal(info.tokens, 32000)
+    assert.equal(info.capped, false)
+  })
+
+  it('is unusable when the context is only the model maximum or unknown', () => {
+    const max = getEffectiveContext({ ctx: '200k', ctxSource: 'model-maximum' })
+    assert.equal(max.usable, false)
+    assert.equal(max.reason, 'model-maximum')
+    assert.equal(max.tokens, null)
+    const unknown = getEffectiveContext({ ctx: null })
+    assert.equal(unknown.usable, false)
+    assert.equal(unknown.reason, 'unknown')
+  })
+
+  it('ignores non-positive or non-numeric quotas', () => {
+    assert.equal(getEffectiveContext({ ctx: '64k', rateLimit: { limitTokens: 0 } }).tokens, 64000)
+    assert.equal(getEffectiveContext({ ctx: '64k', rateLimit: { limitTokens: '8000' } }).capped, false)
+  })
+})
+
+describe('summarizeTelemetryEntry', () => {
+  it('returns null when nothing has been recorded', () => {
+    assert.equal(summarizeTelemetryEntry(undefined), null)
+    assert.equal(summarizeTelemetryEntry(null), null)
+  })
+
+  it('matches the per-key summary used by the API', () => {
+    const store = createTelemetryStore()
+    const now = 1_700_000_000_000
+    for (let i = 0; i < 8; i++) recordSuccess(store, 'p/m', { ttftMs: 900, durationMs: 2900, completionTokens: 100, now })
+    recordFailure(store, 'p/m', 'rateLimit', { now })
+    assert.deepEqual(summarizeTelemetryEntry(store.models['p/m'], now), summarizeTelemetry(store, now)['p/m'])
+  })
+})
+
+
+describe('dashboard search and filters', () => {
+  const S = globalThis.ModelRelaySearch
+  const model = (overrides = {}) => ({
+    label: 'Qwen 3.8 27B', providerKey: 'groq', modelId: 'qwen/qwen3.8-27b', status: 'up',
+    tags: ['coding', 'general'], userTags: ['favorite'],
+    ctxInfo: { usable: true, tokens: 131072 },
+    ...overrides,
+  })
+
+  it('exposes the module on globalThis', () => {
+    assert.equal(typeof S.parseSearch, 'function')
+  })
+
+  it('parses plain and structured terms', () => {
+    const p = S.parseSearch('qwen tag:coding provider:groq status:up min_ctx:64k')
+    assert.deepEqual(p.terms, ['qwen'])
+    assert.deepEqual(p.tags, ['coding'])
+    assert.deepEqual(p.providers, ['groq'])
+    assert.deepEqual(p.statuses, ['up'])
+    assert.equal(p.minCtx, 64000)
+    assert.equal(p.structured, 4)
+  })
+
+  it('accepts ctx aliases and >= forms, keeping the largest', () => {
+    assert.equal(S.parseSearch('ctx:32k').minCtx, 32000)
+    assert.equal(S.parseSearch('ctx>=64k').minCtx, 64000)
+    assert.equal(S.parseSearch('context:>=1m').minCtx, 1000000)
+    assert.equal(S.parseSearch('ctx:32k min_ctx:128k').minCtx, 128000)
+  })
+
+  it('accepts comma separated tags and treats unknown keys or bad sizes as plain text', () => {
+    assert.deepEqual(S.parseSearch('tag:coding,reasoning').tags, ['coding', 'reasoning'])
+    assert.deepEqual(S.parseSearch('foo:bar').terms, ['foo:bar'])
+    assert.deepEqual(S.parseSearch('ctx:lots').terms, ['ctx:lots'])
+    assert.deepEqual(S.parseSearch('').terms, [])
+    assert.deepEqual(S.parseSearch(null).terms, [])
+  })
+
+  it('matches plain terms against label, provider, id and tags, all required', () => {
+    const p = (q) => S.parseSearch(q)
+    assert.equal(S.matchesModel(model(), p('qwen')), true)
+    assert.equal(S.matchesModel(model(), p('GROQ')), true)
+    assert.equal(S.matchesModel(model(), p('favorite')), true)
+    assert.equal(S.matchesModel(model(), p('qwen groq')), true)
+    assert.equal(S.matchesModel(model(), p('qwen nvidia')), false)
+  })
+
+  it('filters by tag, including custom tags, and requires all tags', () => {
+    const p = (q) => S.parseSearch(q)
+    assert.equal(S.matchesModel(model(), p('tag:coding')), true)
+    assert.equal(S.matchesModel(model(), p('tag:favorite')), true)
+    assert.equal(S.matchesModel(model(), p('tag:coding,reasoning')), false)
+    assert.equal(S.matchesModel(model(), p('tag:cod')), false)
+  })
+
+  it('combines filter-bar tags and min context with the search box', () => {
+    const p = S.parseSearch('tag:coding')
+    assert.equal(S.matchesModel(model(), p, { tags: ['general'] }), true)
+    assert.equal(S.matchesModel(model(), p, { tags: ['reasoning'] }), false)
+    assert.equal(S.matchesModel(model(), S.parseSearch(''), { minCtx: 128000 }), true)
+    assert.equal(S.matchesModel(model(), S.parseSearch('ctx:32k'), { minCtx: 256000 }), false)
+  })
+
+  it('applies min context to the effective window and excludes unusable context', () => {
+    const p = S.parseSearch('ctx:64k')
+    assert.equal(S.matchesModel(model({ ctxInfo: { usable: true, tokens: 8000 } }), p), false)
+    assert.equal(S.matchesModel(model({ ctxInfo: { usable: false, tokens: null } }), p), false)
+    assert.equal(S.matchesModel(model({ ctxInfo: undefined }), p), false)
+    assert.equal(S.matchesModel(model({ ctxInfo: { usable: false, tokens: null } }), S.parseSearch('qwen')), true)
+  })
+
+  it('filters by provider and status', () => {
+    assert.equal(S.matchesModel(model(), S.parseSearch('provider:gro')), true)
+    assert.equal(S.matchesModel(model(), S.parseSearch('provider:nvidia')), false)
+    assert.equal(S.matchesModel(model({ status: 'down' }), S.parseSearch('status:up')), false)
+    assert.equal(S.matchesModel(model({ status: 'down' }), S.parseSearch('status:down')), true)
+  })
+
+  it('formats and snaps token counts', () => {
+    assert.equal(S.formatTokens(131072), '131K')
+    assert.equal(S.formatTokens(1000000), '1M')
+    assert.equal(S.formatTokens(8000), '8K')
+    assert.equal(S.formatTokens(null), 'N/A')
+    assert.equal(S.presetForTokens(131072), 128000)
+    assert.equal(S.presetForTokens(8000), 8000)
+    assert.equal(S.presetForTokens(4000), null)
+  })
+
+  it('counts active filters', () => {
+    assert.equal(S.activeFilterCount(S.parseSearch(''), {}, 0), 0)
+    assert.equal(S.activeFilterCount(S.parseSearch('qwen tag:coding'), { tags: ['fast'], minCtx: 64000 }, 2), 1 + 1 + 1 + 1 + 2)
+  })
+
+  it('round-trips UI state and rejects malformed saved state', () => {
+    const state = { search: 'tag:coding', sort: { col: 'ctx', dir: 'desc' }, unchecked: { provider: ['groq'], status: ['down'] }, tags: ['fast'], minCtx: 64000 }
+    assert.deepEqual(S.parseUiState(S.serializeUiState(state)), state)
+    const empty = { search: '', sort: null, unchecked: {}, tags: [], minCtx: null }
+    assert.deepEqual(S.parseUiState('not json'), empty)
+    assert.deepEqual(S.parseUiState(null), empty)
+    assert.deepEqual(S.parseUiState('{"v":99}'), empty)
+    assert.equal(S.parseUiState(JSON.stringify({ v: 1, sort: { col: 'bogus', dir: 'asc' } })).sort, null)
+    assert.deepEqual(S.parseUiState(JSON.stringify({ v: 1, tags: [1, 'ok'], minCtx: -5 })).tags, ['ok'])
+    assert.equal(S.parseUiState(JSON.stringify({ v: 1, minCtx: -5 })).minCtx, null)
+  })
+})
+
+
+describe('dashboard HTML escaping', () => {
+  // Load the dashboard's real escapeHtml (it lives in the page's inline script) and exercise it.
+  const html = readFileSync(join(ROOT, 'public/index.html'), 'utf8')
+  const source = html.match(/function escapeHtml\(value\) \{[\s\S]*?\n    \}/)
+  const escapeHtml = new Function(`${source[0]}; return escapeHtml`)()
+
+  it('escapes quotes so values cannot break out of an attribute', () => {
+    const hostile = 'x" onmouseover="alert(1)" y=\'z'
+    const escaped = escapeHtml(hostile)
+    assert.equal(escaped.includes('"'), false)
+    assert.equal(escaped.includes("'"), false)
+    assert.equal(escaped, 'x&quot; onmouseover=&quot;alert(1)&quot; y=&#39;z')
+  })
+
+  it('still escapes markup and ampersands, and handles non-strings', () => {
+    assert.equal(escapeHtml('<b>&</b>'), '&lt;b&gt;&amp;&lt;/b&gt;')
+    assert.equal(escapeHtml(null), 'null')
+    assert.equal(escapeHtml(42), '42')
+  })
+
+  it('escapes & first so entities are not double-decoded into markup', () => {
+    assert.equal(escapeHtml('&quot;'), '&amp;quot;')
+  })
+
+  it('renders numeric data attributes through Number() so they cannot carry markup', () => {
+    assert.ok(html.includes('data-ctx="${Number(info.tokens) || 0}"'))
+    assert.equal(html.includes('data-ctx="${info.tokens}"'), false)
+  })
+})
+
+describe('normalizeRequestedModel', () => {
+  it('keeps normal selectors and caps hostile or huge input', () => {
+    assert.equal(normalizeRequestedModel('auto-fastest+min_ctx:32000'), 'auto-fastest+min_ctx:32000')
+    assert.equal(normalizeRequestedModel('x'.repeat(5000)).length, MAX_REQUESTED_MODEL_LENGTH)
+  })
+
+  it('returns null for missing or non-string models', () => {
+    assert.equal(normalizeRequestedModel(undefined), null)
+    assert.equal(normalizeRequestedModel(null), null)
+    assert.equal(normalizeRequestedModel(''), null)
+    assert.equal(normalizeRequestedModel({ model: 'x' }), null)
+    assert.equal(normalizeRequestedModel(42), null)
+  })
+})
+
+
+describe('dashboard inline handler and markup safety', () => {
+  const html = readFileSync(join(ROOT, 'public/index.html'), 'utf8')
+  const fnSource = (name) => new Function(`${html.match(new RegExp(`function ${name}\\(value\\) \\{[\\s\\S]*?\\n    \\}`))[0]}; return ${name}`)()
+  const escapeHtml = fnSource('escapeHtml')
+  const jsArg = new Function('escapeHtml', `${html.match(/function jsArg\(value\) \{[\s\S]*?\n    \}/)[0]}; return jsArg`)(escapeHtml)
+  const decodeEntities = (text) => text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+
+  // What the browser does with onclick="fn(...)": decode the attribute, then run it as JS.
+  const roundTrip = (value) => {
+    let received
+    const attr = `capture(${jsArg(value)})`
+    new Function('capture', decodeEntities(attr))((v) => { received = v })
+    return received
+  }
+
+  it('jsArg hands the exact original string to the handler, whatever it contains', () => {
+    const hostile = [
+      "it's'),window.__pwn=2,('",
+      'evil"><img src=x onerror=window.__pwn=1>',
+      'q" data-pwn="1',
+      '</script><script>alert(1)</script>',
+      'back\\slash and \\u0041 and "quotes" and \'single\'',
+      'line1\nline2\r\n\ttab',
+      '&quot; &amp; &#39; &lt;b&gt;',
+      'unicode \u2028 \u2029 \u00e9 \ud83d\ude80',
+      '',
+      'plain-model-id',
+    ]
+    for (const value of hostile) assert.equal(roundTrip(value), value, `round trip failed for ${JSON.stringify(value)}`)
+    assert.equal(roundTrip(null), '')
+    assert.equal(roundTrip(undefined), '')
+    assert.equal(roundTrip(42), '42')
+  })
+
+  it('jsArg output contains no raw quote that could end the attribute', () => {
+    const out = jsArg('x" onmouseover="alert(1)\' y')
+    assert.equal(out.includes('"'), false)
+    assert.equal(out.includes("'"), false)
+  })
+
+  const handlerAttrs = [...html.matchAll(/\bon[a-z]+\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)')/g)]
+    .map(m => ({ quote: m[1] !== undefined ? '"' : "'", body: m[1] !== undefined ? m[1] : m[2] }))
+    .filter(a => a.body.includes('${'))
+
+  it('finds the inline handlers with interpolation (guards the scan itself)', () => {
+    assert.ok(handlerAttrs.length >= 25, `expected at least 25, found ${handlerAttrs.length}`)
+  })
+
+  it('every handler interpolation goes through jsArg or is a plain loop index', () => {
+    for (const { body } of handlerAttrs) {
+      const exprs = [...body.matchAll(/\$\{((?:[^{}]|\{[^{}]*\})*)\}/g)].map(m => m[1].trim())
+      for (const expr of exprs) {
+        assert.ok(/^jsArg\(/.test(expr) || /^(i|idx)$/.test(expr), `unsafe interpolation in handler: ${body.slice(0, 120)}`)
+      }
+    }
+  })
+
+  it('no handler wraps an interpolation in quotes, embeds JSON, or uses a single-quoted attribute', () => {
+    for (const { quote, body } of handlerAttrs) {
+      assert.equal(quote, '"', `single-quoted handler: ${body.slice(0, 80)}`)
+      assert.equal(/'\$\{/.test(body), false, `quote-wrapped interpolation: ${body.slice(0, 80)}`)
+      assert.equal(body.includes('JSON.stringify'), false, `JSON in handler: ${body.slice(0, 80)}`)
+    }
+  })
+
+  it('opens drawers by row key instead of embedding the whole model in onclick', () => {
+    assert.equal(html.includes('openDrawer(${JSON.stringify'), false)
+    assert.ok(html.includes('function openDrawerByRow(rowKey)'))
+  })
+
+  it('does not interpolate untrusted fields into markup unescaped', () => {
+    for (const raw of ['${p.key}', '${m.label}</div>', '${p.name}</h3>', '${l.model}</span>', '<span>${l.provider}</span>', '${m.modelId}</div>', 'href="${p.signupUrl}"']) {
+      assert.equal(html.includes(raw), false, `raw interpolation present: ${raw}`)
+    }
   })
 })

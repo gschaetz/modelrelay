@@ -939,6 +939,52 @@
     }
 
     /* Filter Bar */
+    .logs-filter-row { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
+    .logs-search-input {
+      flex:1; min-width:240px; padding:8px 12px; border:1px solid var(--border); border-radius:8px;
+      background:var(--input-bg); color:var(--text); font-size:0.85rem;
+    }
+    .logs-search-input:focus { outline:none; border-color:var(--accent); }
+    .filter-count-badge {
+      display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px;
+      border-radius:999px; background:var(--accent); color:#fff; font-size:0.68rem; font-weight:700;
+    }
+    .clear-filters-btn {
+      border:none; background:none; cursor:pointer; font-size:0.8rem; color:var(--text-muted);
+      padding:4px 8px; border-radius:6px; white-space:nowrap; transition:all 0.15s;
+    }
+    .clear-filters-btn:hover { background:var(--surface-alt); color:var(--text); }
+    .filter-hint { font-size:0.62rem; color:var(--text-muted); text-transform:none; letter-spacing:0; }
+    .tag-filter-chips { display:flex; flex-wrap:wrap; gap:5px; max-width:260px; }
+    .tag-filter-chip {
+      cursor:pointer; padding:2px 8px; border:1px solid var(--border); border-radius:999px; background:var(--surface-alt);
+      color:var(--text-dim); font-family:monospace; font-size:0.7rem; line-height:1.4; transition:all 120ms ease;
+    }
+    .tag-filter-chip:hover { border-color:var(--accent); color:var(--accent); }
+    .tag-filter-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .filter-ctx-select {
+      padding:5px 8px; border:1px solid var(--border); border-radius:8px; background:var(--input-bg);
+      color:var(--text); font-size:0.78rem;
+    }
+    .model-tag.tag-link { cursor:pointer; }
+    .model-tag.tag-link:hover { border-color:var(--accent); color:var(--accent); }
+    .model-tag.tag-link.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .ctx-value { font-weight:600; font-variant-numeric:tabular-nums; cursor:pointer; }
+    .ctx-value:hover { text-decoration:underline dotted; }
+    .ctx-sub { font-size:0.68rem; color:var(--text-muted); }
+    .ctx-capped { color:var(--warning); }
+    .rel-value { font-weight:600; font-variant-numeric:tabular-nums; }
+    .rel-sub { font-size:0.68rem; color:var(--text-muted); }
+    .rel-badge {
+      display:inline-block; margin-left:5px; padding:0 5px; border-radius:6px; font-size:0.62rem; font-weight:700;
+      background:var(--status-error-bg, #fee2e2); color:var(--status-error-text, #b91c1c);
+    }
+    .model-inline-metrics { display:none; font-size:0.7rem; color:var(--text-muted); margin-top:4px; white-space:normal; overflow-wrap:anywhere; }
+    @media (max-width: 1060px) {
+      .col-ctx, .col-rel { display:none; }
+      .model-inline-metrics { display:block; }
+    }
+
     .filter-bar {
       display: none;
       gap: 16px;
@@ -971,6 +1017,7 @@
       align-items: center;
       width: 100%;
       min-width: 120px;
+      gap: 8px;
     }
 
     .filter-label {
@@ -1759,6 +1806,7 @@
         </p>
         <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.78rem; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           <span>Version <span id="dashboard-version">Loading...</span></span>
+          <a href="https://schaetzkc.com/modelrelay/" target="_blank" rel="noopener" title="Open the modelrelay documentation" style="color: var(--accent); text-decoration: none;">Docs ↗</a>
           <span id="update-pill" style="display:none;"></span>
           <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode" style="background: var(--surface-alt); border: 1px solid var(--border); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 4px; color: var(--text);">
             <span id="theme-icon">🌙</span>
@@ -1830,7 +1878,8 @@
               <path d="m21 21-4.3-4.3" />
             </svg>
             <input type="text" class="search-input" id="search-input"
-              placeholder="Search models, providers, or tiers..." oninput="handleSearch()">
+              placeholder="Search models, providers, tags…  try tag:coding ctx&gt;=64k" oninput="handleSearch()"
+              title="Plain words match name, provider, id and tags. Structured terms: tag:coding  provider:groq  status:up  ctx&gt;=64k (or min_ctx:64k). Press / to focus, Esc to clear.">
           </div>
           <div style="display:flex; align-items:center; gap:20px; flex-shrink: 0;">
             <button onclick="toggleFilterBar()"
@@ -1840,8 +1889,10 @@
                 stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
               </svg>
-              Filters
+              Filters <span id="filter-count-badge" class="filter-count-badge" style="display:none;"></span>
             </button>
+            <button id="clear-filters-btn" class="clear-filters-btn" onclick="clearAllFilters()" style="display:none;"
+              title="Clear the search, tag and context filters, and re-check every filter group">&#x2715; Clear filters</button>
             <div style="display:flex; align-items:center; gap:10px;">
               <div id="hover-pause-badge"
                 style="display:none; background:var(--warning); color:#1a0a00; padding:4px 8px; border-radius:6px; font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; align-items:center; gap:4px;">
@@ -1863,6 +1914,25 @@
 
         <div class="filter-bar">
 
+          <div class="filter-group filter-group-tags">
+            <div class="filter-header">
+              <span class="filter-label">Tags</span>
+              <span class="filter-hint">must have all</span>
+            </div>
+            <div class="tag-filter-chips" id="filter-tags-group">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <div class="filter-group filter-group-ctx">
+            <div class="filter-header">
+              <span class="filter-label">Min context</span>
+              <span class="filter-hint" title="Effective window: the reported context, capped by the observed rate-limit quota">effective</span>
+            </div>
+            <select id="filter-ctx-select" class="filter-ctx-select" onchange="setMinCtxFilter(this.value)">
+              <option value="">Any</option>
+            </select>
+          </div>
 
           <div class="filter-group">
             <div class="filter-header">
@@ -1932,10 +2002,14 @@
                   id="arrow-qos">↕</i></th>
               <th class="sortable" onclick="setSort('intell')" id="th-intell" title="Coding quality score; source is shown beside each value">Coding <i class="sort-arrow"
                   id="arrow-intell">↕</i></th>
+              <th class="sortable col-ctx" onclick="setSort('ctx')" id="th-ctx" title="Effective context window: the reported window, capped by the observed rate-limit quota. This is what min_ctx routing matches on.">Context <i class="sort-arrow"
+                  id="arrow-ctx">↕</i></th>
               <th class="sortable text-right" onclick="setSort('ping')" id="th-ping">Ping <i
                   class="sort-arrow" id="arrow-ping">↕</i></th>
               <th class="sortable text-right" onclick="setSort('availability')" id="th-availability">
                 Availability <i class="sort-arrow" id="arrow-availability">↕</i></th>
+              <th class="sortable col-rel" onclick="setSort('reliability')" id="th-reliability" title="Success rate on real proxied requests (recent traffic, decayed over 24h). Hover a value for the breakdown.">Reliability <i class="sort-arrow"
+                  id="arrow-reliability">↕</i></th>
               <th class="sortable" onclick="setSort('status')" id="th-status">Status <i class="sort-arrow"
                   id="arrow-status">↕</i></th>
             </tr>
@@ -2016,6 +2090,11 @@
             style="background: var(--input-bg); color: var(--text); border: 1px solid var(--border);">Refresh Logs</button>
         </div>
       </div>
+      <div class="logs-filter-row">
+        <input type="text" id="logs-search" class="logs-search-input" placeholder="Filter logs: model, provider, selector (tag:coding), status…" oninput="loadLogs(true)">
+        <label class="cb-label"><input type="checkbox" id="logs-failovers-only" onchange="loadLogs(true)"> Failovers only</label>
+        <label class="cb-label"><input type="checkbox" id="logs-errors-only" onchange="loadLogs(true)"> Errors only</label>
+      </div>
       <div id="logs-container" style="display: flex; flex-direction: column; gap: 16px;">
         <!-- Logs generated here -->
       </div>
@@ -2073,7 +2152,8 @@
     <div id="setup-view" style="display: none;">
       <h2 style="margin-top: 0; font-size: 1.25rem;">Setup Instructions</h2>
       <p style="color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.875rem;">Configure OpenClaw and OpenCode
-        (Opencode) to use this router.</p>
+        (Opencode) to use this router. Full documentation:
+        <a href="https://schaetzkc.com/modelrelay/" target="_blank" rel="noopener">schaetzkc.com/modelrelay</a>.</p>
 
       <div class="setup-grid">
         <div class="setup-card">
@@ -2098,7 +2178,11 @@
     "providers": {
       "modelrelay": {
         "baseUrl": "http://127.0.0.1:7352/v1",
-        "api": "openai-completions"
+        "api": "openai-completions",
+        "apiKey": "no-key",
+        "models": [
+          { "id": "auto-fastest", "name": "Auto Fastest" }
+        ]
       }
     }
   },
@@ -2113,6 +2197,22 @@
     }
   }
 }</pre>
+          </div>
+
+          <div class="setup-method">
+            <p class="setup-method-title">Routing presets <span style="font-weight:400; color:var(--text-muted);">(optional)</span></p>
+            <div style="font-size:0.83rem; color:var(--text-muted);">Besides <code>auto-fastest</code>, you can route by tag and minimum context.
+              <code>modelrelay onboard</code> offers these when it configures OpenClaw; or add them by hand. Each entry is a normal model whose id is a routing selector,
+              and <code>contextWindow</code> matches the <code>min_ctx</code> floor. See the
+              <a href="https://schaetzkc.com/modelrelay/routing/" target="_blank" rel="noopener">routing docs</a>.</div>
+            <pre class="setup-snippet" id="openclaw-presets-snippet">"models": [
+  { "id": "auto-fastest", "name": "Auto Fastest" },
+  { "id": "auto-fastest+min_ctx:128k", "name": "Auto Fastest (128k+)", "contextWindow": 131072 },
+  { "id": "tag:coding+min_ctx:64k", "name": "Coding (64k+)", "contextWindow": 65536 },
+  { "id": "tag:general+min_ctx:32000", "name": "General (32k+)", "contextWindow": 32000 }
+]</pre>
+            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:8px;">Add each id to <code>agents.defaults.models</code> as <code>modelrelay/&lt;id&gt;</code> too, so it shows up in <code>openclaw models list</code>.</div>
+            <button class="btn" style="margin-top:8px;" onclick="copySetupSnippet('openclaw-presets-snippet', this)">Copy models</button>
           </div>
         </div>
 
@@ -2178,12 +2278,25 @@
     <div id="provider-sync-body" style="padding:18px 22px 22px; overflow:auto; max-height:calc(80vh - 84px);"></div>
   </div>
 
+  <script src="/model-search.js"></script>
   <script>
     // Theme toggle
+    // An explicit choice (the toggle) always wins; with none saved, follow the system setting.
     (function() {
-      const saved = localStorage.getItem('modelrelay-theme');
-      if (saved === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
+      let saved = null;
+      try { saved = localStorage.getItem('modelrelay-theme'); } catch { /* storage unavailable */ }
+      const query = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+      const apply = (dark) => {
+        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+        else document.documentElement.removeAttribute('data-theme');
+      };
+      apply(saved === 'dark' || (saved !== 'light' && !!query && query.matches));
+      if (query && query.addEventListener) {
+        query.addEventListener('change', (event) => {
+          let current = null;
+          try { current = localStorage.getItem('modelrelay-theme'); } catch { /* ignore */ }
+          if (current !== 'dark' && current !== 'light') { apply(event.matches); updateThemeIcon(); }
+        });
       }
     })();
 
@@ -2197,6 +2310,18 @@
         localStorage.setItem('modelrelay-theme', 'dark');
       }
       updateThemeIcon();
+    }
+
+    function copySetupSnippet(id, button) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const original = button.textContent;
+      const done = (label) => { button.textContent = label; setTimeout(() => { button.textContent = original; }, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(el.textContent).then(() => done('Copied'), () => done('Copy failed'));
+      } else {
+        done('Copy not available');
+      }
     }
 
     function updateThemeIcon() {
@@ -2220,6 +2345,10 @@
     let searchTerm = '';
     // null = default multi-sort; otherwise { col: string, dir: 'asc'|'desc' }
     let sortState = null;
+    let tagFilter = [];          // tags picked in the filter bar (a model must have all of them)
+    let minCtxFilter = null;     // minimum effective context picked in the filter bar, in tokens
+    let persistedUnchecked = {}; // saved unchecked checkbox values per group, applied once the groups exist
+    const UI_STATE_KEY = 'modelrelay-ui';
     let openDrawerModelId = null;
     let currentRenderedOrder = [];
     let activePinnedModelId = null; // tracks the current pinned selection key
@@ -2316,6 +2445,8 @@
 
         // Populate Provider Checkboxes
         renderProviderFilterGroup(providers);
+        renderTagFilterChips();
+        renderCtxFilterSelect();
 
         render(); // triggers automatic (non-user) layout pass
         updateKPIs(allModels, data.best);
@@ -2354,7 +2485,7 @@
 
         if (pillEl) {
           if (meta.updateAvailable && meta.latestVersion) {
-            pillEl.innerHTML = `<span class="update-badge" onclick="startManualUpdate('${meta.latestVersion}')">✨ Update to v${meta.latestVersion}</span>`;
+            pillEl.innerHTML = `<span class="update-badge" onclick="startManualUpdate(${jsArg(meta.latestVersion)})">✨ Update to v${escapeHtml(meta.latestVersion)}</span>`;
             pillEl.style.display = 'inline-flex';
             pillEl.title = `Current: v${meta.version}`;
           } else {
@@ -2791,6 +2922,145 @@
       render(true);
     }
 
+    // ---- Filters: tags, min context, indicators, persistence -------------------------------------
+    const FILTER_GROUPS = { provider: 'filter-provider-group', ping: 'filter-ping-group', avail: 'filter-avail-group', status: 'filter-status-group' };
+
+    function collectUnchecked() {
+      const out = {};
+      for (const [name, id] of Object.entries(FILTER_GROUPS)) {
+        out[name] = Array.from(document.querySelectorAll(`#${id} input:not(:checked)`)).map(cb => cb.value);
+      }
+      return out;
+    }
+
+    function persistUiState() {
+      try {
+        localStorage.setItem(UI_STATE_KEY, ModelRelaySearch.serializeUiState({
+          search: document.getElementById('search-input').value,
+          sort: sortState,
+          unchecked: collectUnchecked(),
+          tags: tagFilter,
+          minCtx: minCtxFilter,
+        }));
+      } catch { /* storage unavailable: the dashboard just doesn't remember */ }
+    }
+
+    function restoreUiState() {
+      let raw = null;
+      try { raw = localStorage.getItem(UI_STATE_KEY); } catch { /* ignore */ }
+      const saved = ModelRelaySearch.parseUiState(raw);
+      document.getElementById('search-input').value = saved.search;
+      searchTerm = saved.search.toLowerCase();
+      sortState = saved.sort;
+      tagFilter = saved.tags;
+      minCtxFilter = saved.minCtx;
+      persistedUnchecked = saved.unchecked;
+      for (const name of ['ping', 'avail', 'status']) {
+        const unchecked = new Set(saved.unchecked[name] || []);
+        document.querySelectorAll(`#${FILTER_GROUPS[name]} input`).forEach(cb => { cb.checked = !unchecked.has(cb.value); });
+      }
+      updateSortHeaders();
+    }
+
+    let tagChipsSignature = '';
+    function renderTagFilterChips() {
+      const container = document.getElementById('filter-tags-group');
+      if (!container) return;
+      const names = new Set(tagFilter);
+      allModels.forEach(m => [...(m.tags || []), ...(m.userTags || [])].forEach(tag => names.add(tag)));
+      const sorted = Array.from(names).sort((a, b) => a.localeCompare(b));
+      const signature = sorted.join('|') + '#' + tagFilter.join('|');
+      if (signature === tagChipsSignature) return;
+      tagChipsSignature = signature;
+      container.innerHTML = sorted.length === 0
+        ? '<span class="filter-hint">No tags yet</span>'
+        : sorted.map(tag => `<button type="button" class="tag-filter-chip ${tagFilter.includes(tag) ? 'active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('');
+    }
+
+    function renderCtxFilterSelect() {
+      const select = document.getElementById('filter-ctx-select');
+      if (!select) return;
+      if (select.options.length <= 1) {
+        ModelRelaySearch.CTX_PRESETS.forEach(tokens => {
+          const option = document.createElement('option');
+          option.value = String(tokens);
+          option.textContent = `≥ ${ModelRelaySearch.formatTokens(tokens)}`;
+          select.appendChild(option);
+        });
+      }
+      select.value = minCtxFilter ? String(minCtxFilter) : '';
+      // A saved value that is not one of the presets would leave the select blank; keep it visible anyway.
+      if (minCtxFilter && select.value !== String(minCtxFilter)) {
+        const option = document.createElement('option');
+        option.value = String(minCtxFilter);
+        option.textContent = `≥ ${ModelRelaySearch.formatTokens(minCtxFilter)}`;
+        select.appendChild(option);
+        select.value = String(minCtxFilter);
+      }
+    }
+
+    function setMinCtxFilter(value) {
+      const tokens = Number(value);
+      minCtxFilter = Number.isFinite(tokens) && tokens > 0 ? tokens : null;
+      renderCtxFilterSelect();
+      render(true);
+    }
+
+    function applyCtxFromModel(tokens) {
+      setMinCtxFilter(ModelRelaySearch.presetForTokens(tokens));
+    }
+
+    function toggleTagFilter(tag) {
+      tagFilter = tagFilter.includes(tag) ? tagFilter.filter(t => t !== tag) : [...tagFilter, tag];
+      tagChipsSignature = '';
+      renderTagFilterChips();
+      render(true);
+    }
+
+    function clearAllFilters() {
+      document.getElementById('search-input').value = '';
+      searchTerm = '';
+      tagFilter = [];
+      minCtxFilter = null;
+      Object.values(FILTER_GROUPS).forEach(id => document.querySelectorAll(`#${id} input`).forEach(cb => { cb.checked = true; }));
+      tagChipsSignature = '';
+      renderTagFilterChips();
+      renderCtxFilterSelect();
+      render(true);
+    }
+
+    function updateFilterIndicators(parsedSearch, narrowedGroups) {
+      const count = ModelRelaySearch.activeFilterCount(parsedSearch, { tags: tagFilter, minCtx: minCtxFilter }, narrowedGroups);
+      const badge = document.getElementById('filter-count-badge');
+      const clearBtn = document.getElementById('clear-filters-btn');
+      if (badge) { badge.textContent = String(count); badge.style.display = count > 0 ? 'inline-flex' : 'none'; }
+      if (clearBtn) clearBtn.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+
+    // Delegated clicks (capture phase, so they win over the row's own "open drawer" handler).
+    document.addEventListener('click', (event) => {
+      const chip = event.target.closest && event.target.closest('.tag-link, .tag-filter-chip');
+      if (chip && chip.dataset.tag) { event.stopPropagation(); toggleTagFilter(chip.dataset.tag); return; }
+      const ctx = event.target.closest && event.target.closest('.ctx-value[data-ctx]');
+      if (ctx) { event.stopPropagation(); applyCtxFromModel(Number(ctx.dataset.ctx)); }
+    }, true);
+
+    document.addEventListener('keydown', (event) => {
+      const input = document.getElementById('search-input');
+      if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const target = event.target;
+        const typing = target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
+        if (typing) return;
+        event.preventDefault();
+        if (document.getElementById('models-view').style.display === 'none') switchTab('models');
+        input.focus();
+        input.select();
+      } else if (event.key === 'Escape' && document.activeElement === input && input.value) {
+        input.value = '';
+        handleSearch();
+      }
+    });
+
     function setSort(col) {
       if (sortState && sortState.col === col) {
         if (sortState.dir === 'asc') {
@@ -2813,7 +3083,7 @@
     }
 
     function updateSortHeaders() {
-      const cols = ['model', 'qos', 'intell', 'ping', 'availability', 'status'];
+      const cols = ['model', 'qos', 'intell', 'ctx', 'ping', 'availability', 'reliability', 'status'];
       const resetBtn = document.getElementById('sort-reset-btn');
       cols.forEach(col => {
         const th = document.getElementById(`th-${col}`);
@@ -2837,6 +3107,9 @@
         case 'availability': return m.uptime;
         case 'qos': return m.qos || 0;
         case 'intell': return getBenchmarkSortValue(m.intell);
+        // Unknown values return Infinity so they always sort last, whichever way the column is sorted.
+        case 'ctx': return m.ctxInfo && m.ctxInfo.usable ? m.ctxInfo.tokens : Infinity;
+        case 'reliability': return m.telemetry && m.telemetry.samples > 0 ? m.telemetry.successRate : Infinity;
         case 'rate': return m.isRateLimited ? 1 : 0;
         case 'health': return m.qos || 0; // fallback just in case
         case 'model': return (m.label || '').toLowerCase();
@@ -2883,11 +3156,10 @@
       return arr.sort((a, b) => {
         const av = colValue(a, col);
         const bv = colValue(b, col);
-        // Ping: Infinity always last regardless of sort direction
-        if (col === 'ping') {
+        // Unknown values (Infinity: no ping, unknown context, no telemetry) always sort last
+        if (av === Infinity || bv === Infinity) {
           if (av === Infinity && bv === Infinity) return compareByChain(a, b, tiebreakers);
-          if (av === Infinity) return 1;
-          if (bv === Infinity) return -1;
+          return av === Infinity ? 1 : -1;
         }
         const cmp = typeof av === 'string' ? av.localeCompare(bv) : (av - bv);
         if (cmp !== 0) return sign * cmp;
@@ -2900,11 +3172,8 @@
       const tbody = document.getElementById('table-body');
 
       // 1. Apply Search
-      let filtered = allModels.filter(m =>
-        m.label.toLowerCase().includes(searchTerm) ||
-        m.providerKey.toLowerCase().includes(searchTerm) ||
-        m.modelId.toLowerCase().includes(searchTerm)
-      );
+      const parsedSearch = ModelRelaySearch.parseSearch(searchTerm);
+      let filtered = allModels.filter(m => ModelRelaySearch.matchesModel(m, parsedSearch, { tags: tagFilter, minCtx: minCtxFilter }));
 
       // 1.5. Apply Filter Rules (minSweScore, excludedProviders) - marks as excluded for display
       const { minSweScore, excludedProviders } = filterRules;
@@ -2928,6 +3197,10 @@
       const fPing = getChecked('filter-ping-group');
       const fAvail = getChecked('filter-avail-group');
       const fStatus = getChecked('filter-status-group');
+
+      const narrowedGroups = Object.values(FILTER_GROUPS).filter(id => document.querySelectorAll(`#${id} input`).length > 0 && !allChecked(id)).length;
+      updateFilterIndicators(parsedSearch, narrowedGroups);
+      if (isUserAction) persistUiState();
 
       if (!allChecked('filter-provider-group')) filtered = filtered.filter(m => fProv.includes(m.providerKey));
       if (!allChecked('filter-status-group')) filtered = filtered.filter(m => fStatus.includes(m.status));
@@ -3006,7 +3279,9 @@
         row.style.opacity = isExcludedRow || isBannedRow ? '0.5' : '1';
         modelCell.querySelector('div').firstChild.textContent = (isBannedRow ? '🚫 ' : (isExcludedRow ? '⛔ ' : '')) + m.label;
         const tagRow = modelCell.querySelector('.model-tag-row');
-        if (tagRow) tagRow.innerHTML = renderModelTagChips(m.tags);
+        if (tagRow) tagRow.innerHTML = renderModelTagChips(m.tags, false, true);
+        const inlineMetrics = modelCell.querySelector('.model-inline-metrics');
+        if (inlineMetrics) inlineMetrics.textContent = renderInlineMetrics(m);
         modelCell.onclick = () => openDrawer(m);
 
         // Update QoS
@@ -3017,8 +3292,12 @@
         const intellCell = row.cells[3];
         intellCell.innerHTML = `<div style="font-weight: 600;">${getBenchmarkTableDisplayValue(m.intell, m.qualitySource, m.qualityDetail)}</div>`;
 
+        // Update effective context and real-traffic reliability
+        row.cells[4].innerHTML = renderCtxCell(m);
+        row.cells[7].innerHTML = renderReliabilityCell(m);
+
         // Update status dot and text
-        const statusCell = row.cells[6];
+        const statusCell = row.cells[8];
         statusCell.innerHTML = `
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="width: 6px; height: 6px; border-radius: 50%; background: ${m.status === 'up' ? 'var(--success)' : (m.status === 'disabled' || m.status === 'banned' || m.status === 'excluded') ? 'var(--text-muted)' : 'var(--error)'}"></span>
@@ -3027,7 +3306,7 @@
           `;
 
         // Update ping
-        const pingCell = row.cells[4];
+        const pingCell = row.cells[5];
         const pingDot = pingCell.querySelector('.ping-dot');
         const pingTextEl = pingCell.querySelector('div[style*="text-align"]') || pingCell.querySelector('div:last-child');
         if (hasPing) {
@@ -3042,7 +3321,7 @@
         }
 
         // Update uptime and rate icon
-        const uptimeCell = row.cells[5];
+        const uptimeCell = row.cells[6];
         const uptimeContainer = uptimeCell.querySelector('div');
         uptimeContainer.style.justifyContent = 'flex-end';
         uptimeContainer.querySelector('.progress-fill').style.width = m.uptime + '%';
@@ -3069,21 +3348,23 @@
       tr.innerHTML = `
           <td>
             <div style="display:flex; flex-direction:column; gap:2px; align-items:center;">
-              <div class="expand-btn" onclick='openDrawer(${JSON.stringify(m).replace(/'/g, "&apos;")})'>
+              <div class="expand-btn" onclick="openDrawerByRow(${jsArg(getModelRowKey(m))})">
                 <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
               </div>
-              <div class="pin-row-btn ${isPinnedRow ? 'pinned' : ''}" onclick="pinModel('${isPinnedRow ? '' : m.modelId}', '${m.providerKey}')" title="${isPinnedRow ? 'Unpin model' : 'Pin model'}">📌</div>
+              <div class="pin-row-btn ${isPinnedRow ? 'pinned' : ''}" onclick="pinModel(${jsArg(isPinnedRow ? '' : m.modelId)}, ${jsArg(m.providerKey)})" title="${isPinnedRow ? 'Unpin model' : 'Pin model'}">📌</div>
             </div>
           </td>
-          <td style="cursor:pointer;" onclick='openDrawer(${JSON.stringify(m).replace(/'/g, "&apos;")})'>
-            <div style="font-weight: 600;">${m.status === 'banned' ? '🚫 ' : (m.status === 'excluded' ? '⛔ ' : '')}${m.label}</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${m.providerKey}</div>
-            <div class="model-tag-row">${renderModelTagChips(m.tags)}</div>
+          <td style="cursor:pointer;" onclick="openDrawerByRow(${jsArg(getModelRowKey(m))})">
+            <div style="font-weight: 600;">${m.status === 'banned' ? '🚫 ' : (m.status === 'excluded' ? '⛔ ' : '')}${escapeHtml(m.label)}</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(m.providerKey)}</div>
+            <div class="model-tag-row">${renderModelTagChips(m.tags, false, true)}</div>
+            <div class="model-inline-metrics">${renderInlineMetrics(m)}</div>
           </td>
           <td>
             <div style="font-weight: 700; color: ${getQosColor(m.qos)}">${getQosDisplayValue(m.qos)}</div>
           </td>
           <td><div style="font-weight: 600;">${getBenchmarkTableDisplayValue(m.intell, m.qualitySource, m.qualityDetail)}</div></td>
+          <td class="col-ctx">${renderCtxCell(m)}</td>
           <td class="text-right">
             <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end;">
               <div class="ping-dot ${hasPing ? 'active ' + pingClass : ''}" style="--speed: ${pingSpeed}"></div>
@@ -3103,6 +3384,7 @@
               <span class="rate-icon" style="font-size:1.1rem; opacity: 1;" title="${m.isRateLimited ? 'Rate limit exceeded, waiting to reset' : 'Rate available'}">${m.isRateLimited ? '🕑' : '✅'}</span>
             </div>
           </td>
+          <td class="col-rel">${renderReliabilityCell(m)}</td>
           <td>
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="width: 6px; height: 6px; border-radius: 50%; background: ${m.status === 'up' ? 'var(--success)' : (m.status === 'disabled' || m.status === 'banned' || m.status === 'excluded') ? 'var(--text-muted)' : 'var(--error)'}"></span>
@@ -3159,14 +3441,64 @@
       }
     }
 
-    function renderModelTagChips(tags, editable = false) {
+    function renderModelTagChips(tags, editable = false, linkable = false) {
       const normalized = Array.isArray(tags) ? tags : [];
       if (normalized.length === 0) return editable
         ? '<span style="font-size:0.75rem;color:var(--text-muted);">No tags yet</span>'
         : '';
       return normalized.map(tag => editable
-        ? `<button class="model-tag" onclick="removeModelTag('${escapeHtml(tag)}')" title="Remove ${escapeHtml(tag)}">${escapeHtml(tag)} ×</button>`
-        : `<span class="model-tag">${escapeHtml(tag)}</span>`).join('');
+        ? `<button class="model-tag" onclick="removeModelTag(${jsArg(tag)})" title="Remove ${escapeHtml(tag)}">${escapeHtml(tag)} ×</button>`
+        : (linkable
+          ? `<span class="model-tag tag-link ${tagFilter.includes(tag) ? 'active' : ''}" data-tag="${escapeHtml(tag)}" title="Filter by ${escapeHtml(tag)}">${escapeHtml(tag)}</span>`
+          : `<span class="model-tag">${escapeHtml(tag)}</span>`)).join('');
+    }
+
+    // ---- Context and reliability cells ------------------------------------------------------------
+    const FAILURE_LABELS = { rateLimit: 'rate limited', serverError: 'server errors', network: 'network errors', midstream: 'cut-off streams', unsupported: 'rejected tools/schema' };
+
+    function renderCtxCell(m) {
+      const info = m.ctxInfo;
+      const fmt = ModelRelaySearch.formatTokens;
+      if (!info || !info.usable) {
+        const why = info && info.reason === 'model-maximum'
+          ? `Only the model's maximum (${fmt(info.reportedTokens)}) is known, not what this provider allocates, so min_ctx routing skips it.`
+          : 'Context window unknown, so min_ctx routing skips it.';
+        return `<div title="${escapeHtml(why)}"><span class="ctx-value" style="color:var(--text-muted); cursor:default;">N/A</span>${info && info.reportedTokens ? `<div class="ctx-sub">max ${fmt(info.reportedTokens)}</div>` : ''}</div>`;
+      }
+      const hint = `Click to show models with at least ${fmt(ModelRelaySearch.presetForTokens(info.tokens) || info.tokens)} of context`;
+      if (info.capped) {
+        const title = `Reported ${fmt(info.reportedTokens)}, capped at ${fmt(info.quotaTokens)} by the observed rate-limit quota. min_ctx routing uses ${fmt(info.tokens)}. ${hint}.`;
+        return `<div class="ctx-value ctx-capped" data-ctx="${Number(info.tokens) || 0}" title="${escapeHtml(title)}">${fmt(info.tokens)} ⚠</div><div class="ctx-sub">of ${fmt(info.reportedTokens)} reported</div>`;
+      }
+      return `<div class="ctx-value" data-ctx="${Number(info.tokens) || 0}" title="${escapeHtml(hint)}">${fmt(info.tokens)}</div>`;
+    }
+
+    function renderReliabilityCell(m) {
+      const t = m.telemetry;
+      if (!t || !(t.samples > 0)) return '<span class="rel-sub" title="No real requests recorded for this model yet">—</span>';
+      const pct = Math.round(t.successRate * 100);
+      const color = pct >= 95 ? 'var(--success)' : (pct >= 80 ? 'var(--warning)' : 'var(--error)');
+      const failures = Object.entries(t.failures || {}).filter(([, n]) => n > 0.05)
+        .map(([kind, n]) => `${FAILURE_LABELS[kind] || kind}: ${Math.round(n * 10) / 10}`);
+      const lines = [
+        `Success ${pct}% over about ${Math.round(t.samples)} recent real requests (decays over 24h)`,
+        failures.length ? `Failures — ${failures.join(', ')}` : 'No failures recorded',
+        t.ttftMs ? `Time to first token ~${t.ttftMs}ms` : null,
+        t.tokensPerSec ? `~${t.tokensPerSec} tokens/s` : null,
+        t.multiplier < 1 ? `Routing score multiplied by ${t.multiplier.toFixed(2)}` : (t.confidence === 0 ? 'Too few samples to affect routing yet' : 'Not demoted'),
+      ].filter(Boolean).join('\n');
+      const badge = t.multiplier < 1 ? `<span class="rel-badge">×${t.multiplier.toFixed(2)}</span>` : '';
+      const sub = `${Math.round(t.samples)} req${t.ttftMs ? ` · ${(t.ttftMs / 1000).toFixed(1)}s ttft` : ''}`;
+      return `<div title="${escapeHtml(lines)}" style="${t.confidence === 0 ? 'opacity:0.65;' : ''}"><div class="rel-value" style="color:${color}">${pct}%${badge}</div><div class="rel-sub">${sub}</div></div>`;
+    }
+
+    // Shown under the model name at narrow widths, where the Context and Reliability columns are hidden.
+    function renderInlineMetrics(m) {
+      const info = m.ctxInfo;
+      const parts = [];
+      parts.push(info && info.usable ? `ctx ${ModelRelaySearch.formatTokens(info.tokens)}${info.capped ? ' ⚠' : ''}` : 'ctx N/A');
+      if (m.telemetry && m.telemetry.samples > 0) parts.push(`${Math.round(m.telemetry.successRate * 100)}% ok${m.telemetry.multiplier < 1 ? ` ×${m.telemetry.multiplier.toFixed(2)}` : ''}`);
+      return parts.join(' · ');
     }
 
     function getBenchmarkDisplayValue(value, source, detail = '') {
@@ -3541,7 +3873,10 @@
       const providerGroup = document.getElementById('filter-provider-group');
       if (!providerGroup) return;
 
-      const selected = new Set(Array.from(providerGroup.querySelectorAll('input:checked')).map(cb => cb.value));
+      const existingInputs = Array.from(providerGroup.querySelectorAll('input'));
+      const uncheckedNow = existingInputs.length > 0
+        ? new Set(existingInputs.filter(cb => !cb.checked).map(cb => cb.value))
+        : new Set(persistedUnchecked.provider || []);
       const enabledProviders = (providerConfigs || []).filter(p => p.enabled);
 
       providerGroup.innerHTML = enabledProviders
@@ -3550,7 +3885,7 @@
         .join('');
 
       providerGroup.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.checked = selected.size === 0 || selected.has(cb.value);
+        cb.checked = !uncheckedNow.has(cb.value);
       });
     }
 
@@ -3872,21 +4207,21 @@
             : 'Set the upstream base URL and exact model ID for this provider. If base URL is blank, modelrelay uses https://ollama.com/v1 and expects an OLLAMA_API_KEY.';
           const openAiCompatibleFieldsHtml = showsBaseUrlFields ? `
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-              <input type="text" id="base-url-${p.key}" value="${escapeHtml(p.baseUrl || '')}" placeholder="${baseUrlPlaceholder}" style="flex:1;" onblur="updateProviderBaseUrl('${p.key}')">
+              <input type="text" id="base-url-${escapeHtml(p.key)}" value="${escapeHtml(p.baseUrl || '')}" placeholder="${baseUrlPlaceholder}" style="flex:1;" onblur="updateProviderBaseUrl(${jsArg(p.key)})">
             </div>
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-              <input type="text" id="model-id-${p.key}" value="${escapeHtml(p.modelId || '')}" placeholder="upstream-model-id (optional if discovery is on)" style="flex:1;" onblur="updateProviderModelId('${p.key}')">
+              <input type="text" id="model-id-${escapeHtml(p.key)}" value="${escapeHtml(p.modelId || '')}" placeholder="upstream-model-id (optional if discovery is on)" style="flex:1;" onblur="updateProviderModelId(${jsArg(p.key)})">
             </div>
             <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">${baseUrlNote}</div>
             ${p.isOpenAICompatibleInstance ? `
               <div style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                  <input type="checkbox" id="discover-${p.key}" ${p.discoverModels !== false ? 'checked' : ''} onchange="updateProviderDiscoverModels('${p.key}')">
+                  <input type="checkbox" id="discover-${escapeHtml(p.key)}" ${p.discoverModels !== false ? 'checked' : ''} onchange="updateProviderDiscoverModels(${jsArg(p.key)})">
                   Discover models from <code>/v1/models</code>
                 </label>
               </div>
               <div style="margin-top:10px; display:flex; justify-content:flex-end;">
-                <button onclick="removeOpenAICompatibleEndpoint('${escapeHtml(p.openAICompatibleInstanceId)}', ${JSON.stringify(p.name)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Remove Endpoint</button>
+                <button onclick="removeOpenAICompatibleEndpoint(${jsArg(p.openAICompatibleInstanceId)}, ${jsArg(p.name)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Remove Endpoint</button>
               </div>
             ` : ''}
           ` : '';
@@ -3894,7 +4229,7 @@
           const optionalBearerAuthHtml = (tokenOptional && p.hasKey) ? `
             <div style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                <input type="checkbox" id="bearer-auth-${p.key}" ${p.useBearerAuth !== false ? 'checked' : ''} onchange="updateProviderBearerAuth('${p.key}')">
+                <input type="checkbox" id="bearer-auth-${escapeHtml(p.key)}" ${p.useBearerAuth !== false ? 'checked' : ''} onchange="updateProviderBearerAuth(${jsArg(p.key)})">
                 Attach API Key as Bearer
               </label>
             </div>
@@ -3967,8 +4302,8 @@
               <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                   <span style="background:${kiroStatusBg}; color:${kiroStatusColor}; border-radius:999px; padding:2px 10px; font-size:0.75rem; font-weight:600;">${kiroStatusOk ? '✅' : '⚠️'} ${escapeHtml(kiroStatusText)}</span>
-                  <h3 style="margin:0; font-size:1rem;">${p.name}</h3>
-                  <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick='refreshProviderModels(${JSON.stringify(p.key)}, ${JSON.stringify(p.name)})' title="Refresh provider models">
+                  <h3 style="margin:0; font-size:1rem;">${escapeHtml(p.name)}</h3>
+                  <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick="refreshProviderModels(${jsArg(p.key)}, ${jsArg(p.name)})" title="Refresh provider models">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                       <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                       <polyline points="21 3 21 9 15 9"></polyline>
@@ -3978,7 +4313,7 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:10px;">
                   <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                    <input type="checkbox" id="enable-${p.key}" ${p.enabled ? 'checked' : ''} onchange="updateProvider('${p.key}')">
+                    <input type="checkbox" id="enable-${escapeHtml(p.key)}" ${p.enabled ? 'checked' : ''} onchange="updateProvider(${jsArg(p.key)})">
                     Enabled
                   </label>
                 </div>
@@ -3992,11 +4327,11 @@
                 <button onclick="autoImportKiroToken()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:8px; font-size:0.78rem; font-weight:600;">Auto-import from AWS cache</button>
               </div>
               <div class="form-group" style="display:flex; gap:8px; align-items:center;">
-                <input type="password" id="key-${p.key}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (Refresh Token Configured)' : 'Paste Kiro refresh token...'}" style="flex:1; background:var(--input-bg); color:var(--text);" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveKiroRefreshToken();}">
-                <button onclick="toggleProviderKeyVisibility('${p.key}', this)" title="Show or hide token" aria-label="Show or hide token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
-                ${p.hasKey ? `<button onclick="copyProviderKey('${p.key}', this)" title="Copy token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
+                <input type="password" id="key-${escapeHtml(p.key)}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (Refresh Token Configured)' : 'Paste Kiro refresh token...'}" style="flex:1; background:var(--input-bg); color:var(--text);" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveKiroRefreshToken();}">
+                <button onclick="toggleProviderKeyVisibility(${jsArg(p.key)}, this)" title="Show or hide token" aria-label="Show or hide token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
+                ${p.hasKey ? `<button onclick="copyProviderKey(${jsArg(p.key)}, this)" title="Copy token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
                 <button onclick="saveKiroRefreshToken()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Save Token</button>
-                ${p.hasKey ? `<button onclick="deleteProviderKey('${p.key}')" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Token</button>` : ''}
+                ${p.hasKey ? `<button onclick="deleteProviderKey(${jsArg(p.key)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Token</button>` : ''}
               </div>
               <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">ModelRelay stores the resulting Kiro refresh token locally in your ModelRelay config. Auto-import/manual token are still useful if Kiro is already signed in on this machine.</div>
               ${kiroDeviceAuthHtml}
@@ -4004,7 +4339,7 @@
               ${kiroMessageHtml}
               <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:12px;">
                 <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Ping interval (min):</span>
-                <input type="number" id="ping-interval-${p.key}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval('${p.key}')">
+                <input type="number" id="ping-interval-${escapeHtml(p.key)}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval(${jsArg(p.key)})">
                 <span style="font-size:0.75rem; color:var(--text-muted);">(default: 30)</span>
               </div>
               ${providerErrorHtml}
@@ -4017,32 +4352,32 @@
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
               <div style="display:flex; align-items:center; gap:10px;">
                 <span style="background:${statusBg}; color:${statusColor}; border-radius:999px; padding:2px 10px; font-size:0.75rem; font-weight:600;">${statusIcon} ${statusText}</span>
-                <h3 style="margin:0; font-size:1rem;">${p.name}</h3>
-                <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick='refreshProviderModels(${JSON.stringify(p.key)}, ${JSON.stringify(p.name)})' title="Refresh provider models">
+                <h3 style="margin:0; font-size:1rem;">${escapeHtml(p.name)}</h3>
+                <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick="refreshProviderModels(${jsArg(p.key)}, ${jsArg(p.name)})" title="Refresh provider models">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                     <polyline points="21 3 21 9 15 9"></polyline>
                   </svg>
                   <span>${isRefreshing ? 'Refreshing…' : `${modelCount} model${modelCount !== 1 ? 's' : ''}`}</span>
                 </button>
-                ${p.signupUrl ? `<a href="${p.signupUrl}" target="_blank" rel="noopener noreferrer" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:600;">Get API key</a>` : ''}
+                ${p.signupUrl ? `<a href="${escapeHtml(p.signupUrl)}" target="_blank" rel="noopener noreferrer" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:600;">Get API key</a>` : ''}
               </div>
               <div style="display:flex; align-items:center; gap:10px;">
                 <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                  <input type="checkbox" id="enable-${p.key}" ${p.enabled ? 'checked' : ''} onchange="updateProvider('${p.key}')">
+                  <input type="checkbox" id="enable-${escapeHtml(p.key)}" ${p.enabled ? 'checked' : ''} onchange="updateProvider(${jsArg(p.key)})">
                   Enabled
                 </label>
               </div>
             </div>
             <div class="form-group" style="display:flex; gap:8px; align-items:center;">
-              <input type="password" id="key-${p.key}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (' + (tokenOptional ? 'API Key Configured' : 'Key Configured') + ')' : (tokenOptional ? 'Enter API Key (optional)...' : 'Enter API Key...')}" style="flex:1; background:var(--input-bg); color:var(--text);" onblur="updateProviderKey('${p.key}')">
-              <button onclick="toggleProviderKeyVisibility('${p.key}', this)" title="Show or hide API key" aria-label="Show or hide API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
-              ${p.hasKey ? `<button onclick="copyProviderKey('${p.key}', this)" title="Copy API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
-              ${p.hasKey ? `<button onclick="deleteProviderKey('${p.key}')" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Key</button>` : ''}
+              <input type="password" id="key-${escapeHtml(p.key)}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (' + (tokenOptional ? 'API Key Configured' : 'Key Configured') + ')' : (tokenOptional ? 'Enter API Key (optional)...' : 'Enter API Key...')}" style="flex:1; background:var(--input-bg); color:var(--text);" onblur="updateProviderKey(${jsArg(p.key)})">
+              <button onclick="toggleProviderKeyVisibility(${jsArg(p.key)}, this)" title="Show or hide API key" aria-label="Show or hide API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
+              ${p.hasKey ? `<button onclick="copyProviderKey(${jsArg(p.key)}, this)" title="Copy API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
+              ${p.hasKey ? `<button onclick="deleteProviderKey(${jsArg(p.key)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Key</button>` : ''}
             </div>
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
               <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Ping interval (min):</span>
-              <input type="number" id="ping-interval-${p.key}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval('${p.key}')">
+              <input type="number" id="ping-interval-${escapeHtml(p.key)}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval(${jsArg(p.key)})">
               <span style="font-size:0.75rem; color:var(--text-muted);">(default: 30)</span>
             </div>
             ${(Array.isArray(p.apiKeyPool) && p.apiKeyPool.length > 0) ? `
@@ -4056,18 +4391,18 @@
                   <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border:1px solid var(--border-subtle); border-radius:6px; font-size:0.78rem;">
                     <span style="font-weight:700; color:var(--text-muted); min-width:20px;">[${i}]</span>
                     <span style="font-family:monospace; color:var(--text); flex:1;">${escapeHtml(acct.masked)}</span>
-                    <span id="acct-status-${p.key}-${i}" style="font-size:0.7rem;"></span>
-                    <button onclick="removeAccountKey('${p.key}', ${i})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600;">Remove</button>
+                    <span id="acct-status-${escapeHtml(p.key)}-${i}" style="font-size:0.7rem;"></span>
+                    <button onclick="removeAccountKey(${jsArg(p.key)}, ${i})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600;">Remove</button>
                   </div>
                 `).join('')}
               </div>
               <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                <input type="password" id="new-key-${p.key}" placeholder="Add new account key..." style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem; background:var(--input-bg); color:var(--text);">
-                <button onclick="addAccountKey('${p.key}')" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Add Account</button>
+                <input type="password" id="new-key-${escapeHtml(p.key)}" placeholder="Add new account key..." style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem; background:var(--input-bg); color:var(--text);">
+                <button onclick="addAccountKey(${jsArg(p.key)})" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Add Account</button>
               </div>
               <div style="display:flex; gap:8px; align-items:center;">
                 <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Max turns per account:</span>
-                <input type="number" id="maxturns-${p.key}" min="0" step="1" value="${p.maxTurns || 0}" style="width:70px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;" onchange="updateProviderMaxTurns('${p.key}')">
+                <input type="number" id="maxturns-${escapeHtml(p.key)}" min="0" step="1" value="${p.maxTurns || 0}" style="width:70px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;" onchange="updateProviderMaxTurns(${jsArg(p.key)})">
                 <span style="font-size:0.72rem; color:var(--text-muted);">0 = unlimited</span>
               </div>
             </div>
@@ -5006,12 +5341,41 @@
       }
     }
 
+    // What the caller asked for (e.g. auto-fastest+min_ctx:32000 or tag:coding), shown next to what it was routed to.
+    // Older log entries have no requestedModel, and a plain model name that matches the routed model adds nothing.
+    function requestedModelChip(l) {
+      if (!l || !l.requestedModel || l.requestedModel === l.model) return '';
+      return `<span title="Requested model: ${escapeHtml(l.requestedModel)}" style="background:var(--surface-alt); color:var(--text-dim); border:1px solid var(--border); padding:1px 8px; border-radius:999px; font-size:0.7rem; font-family:monospace;">asked: ${escapeHtml(l.requestedModel)}</span>`;
+    }
+
+    function filterLogs(logs) {
+      const text = (document.getElementById('logs-search')?.value || '').trim().toLowerCase();
+      const failoversOnly = !!document.getElementById('logs-failovers-only')?.checked;
+      const errorsOnly = !!document.getElementById('logs-errors-only')?.checked;
+      return logs.filter(l => {
+        const attempts = Array.isArray(l.attempts) ? l.attempts : [];
+        const retries = typeof l.retryCount === 'number' ? l.retryCount : Math.max(0, attempts.length - 1);
+        if (failoversOnly && retries < 1) return false;
+        if (errorsOnly && l.status === '200') return false;
+        if (!text) return true;
+        const haystack = [l.requestedModel, l.model, l.provider, l.resolvedModel, l.status, ...attempts.map(a => `${a.provider}/${a.model} ${a.status}`)]
+          .filter(Boolean).join(' ').toLowerCase();
+        return text.split(/\s+/).every(term => haystack.includes(term));
+      });
+    }
+
     async function loadLogs(force = false) {
       if (!force && logsAutoRefreshPaused) return;
       try {
         const res = await fetch('/api/logs');
-        const logs = await res.json();
+        const allLogs = await res.json();
+        const logs = filterLogs(allLogs);
         const container = document.getElementById('logs-container');
+
+        if (logs.length === 0 && allLogs.length > 0) {
+          container.innerHTML = `<div style="padding: 32px; text-align: center; color: var(--text-muted); background: var(--card); border: 1px solid var(--border); border-radius: 12px;">No requests match the log filters (${allLogs.length} hidden).</div>`;
+          return;
+        }
 
         if (logs.length === 0) {
           container.innerHTML = '<div style="padding: 32px; text-align: center; color: var(--text-muted); background: var(--card); border: 1px solid var(--border); border-radius: 12px;">No requests have been routed yet.</div>';
@@ -5110,16 +5474,16 @@
           let failoverHtml = '';
           if (attempts.length > 0) {
             const attemptRows = attempts.map((a, idx) => {
-              const code = a && a.status ? String(a.status) : 'unknown';
-              const isOk = code === '200';
+              const code = escapeHtml(a && a.status ? String(a.status) : 'unknown');
+              const isOk = code === '200'; // (escaped digits are unchanged)
               const isRetryable = !!(a && a.retryable);
               const chipBg = isOk ? 'var(--status-success-bg)' : (isRetryable ? 'var(--status-warning-bg)' : 'var(--status-error-bg)');
               const chipFg = isOk ? 'var(--status-success-text)' : (isRetryable ? 'var(--status-warning-text)' : 'var(--status-error-text)');
-              const model = a && a.model ? a.model : '(unknown model)';
-              const provider = a && a.provider ? a.provider : '(unknown provider)';
+              const model = escapeHtml(a && a.model ? a.model : '(unknown model)');
+              const provider = escapeHtml(a && a.provider ? a.provider : '(unknown provider)');
               const duration = a && a.duration != null ? `${a.duration}ms` : 'n/a';
               const err = a && a.error
-                ? `<div style="margin-top:4px; color: var(--text-muted); font-size:0.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${String(a.error).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`
+                ? `<div style="margin-top:4px; color: var(--text-muted); font-size:0.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(String(a.error))}</div>`
                 : '';
               return `
                 <div style="padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--chat-bg);">
@@ -5149,19 +5513,20 @@
           const isExpanded = expandedCards.has(cardId) ? ' expanded' : '';
           return `
             <div class="log-card${isExpanded}" id="${cardId}">
-              <div class="log-card-header" onclick="toggleLogCard('${cardId}')">
+              <div class="log-card-header" onclick="toggleLogCard(${jsArg(cardId)})">
                 <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
                   <span class="log-chevron">▶</span>
                   <div style="min-width:0;">
                     <div style="display: flex; align-items: center; gap: 10px; flex-wrap:wrap;">
-                      <span style="font-weight: 600; font-size: 0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${l.model}</span>
+                      <span style="font-weight: 600; font-size: 0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(l.model)}</span>
+                      ${requestedModelChip(l)}
                       ${resolvedModelChip}
                       ${statusBadge}
                     </div>
                     <div style="font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 10px; flex-wrap: wrap; margin-top:2px;">
                       <span>${timeStr}</span>
                       <span>•</span>
-                      <span>${l.provider}</span>
+                      <span>${escapeHtml(l.provider)}</span>
                       ${hadFailover ? `<span>•</span><span style="color: var(--warning); font-weight: 600;">🔁 ${retryCount} failover${retryCount > 1 ? 's' : ''}</span>` : ''}
                       ${l.duration ? `<span>•</span><span>${l.duration}ms total</span>` : ''}
                       ${l.ttft != null && l.ttft !== l.duration ? `<span>•</span><span style="color: var(--accent);">⚡ ${l.ttft}ms TTFT</span>` : ''}
@@ -5178,7 +5543,7 @@
                 ${failoverHtml}
                 ${errorHtml}
                 <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); display:flex; justify-content:flex-end;">
-                  <button onclick="event.stopPropagation(); toggleBan('${l.model}', '${logModelStatus}')" style="background: ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-bg)'}; border: 1px solid ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-border)'}; padding: 6px 14px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; color: ${isBanned ? 'var(--status-neutral-text)' : 'var(--status-error-text)'}; cursor: pointer;">${isBanned ? '✓ Unban Model' : '🚫 Ban Model'}</button>
+                  <button onclick="event.stopPropagation(); toggleBan(${jsArg(l.model)}, ${jsArg(logModelStatus)})" style="background: ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-bg)'}; border: 1px solid ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-border)'}; padding: 6px 14px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; color: ${isBanned ? 'var(--status-neutral-text)' : 'var(--status-error-text)'}; cursor: pointer;">${isBanned ? '✓ Unban Model' : '🚫 Ban Model'}</button>
                 </div>
               </div>
             </div>
@@ -5200,11 +5565,22 @@
       loadLogs(true);
     }
 
+    // Safe for both text and quoted-attribute contexts: quotes must be escaped too, otherwise a value
+    // containing " breaks out of title="..." / data-x="..." and can inject attributes such as onmouseover.
     function escapeHtml(value) {
       return String(value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // A JavaScript string literal that is safe inside a double-quoted HTML event-handler attribute:
+    // onclick="fn(${jsArg(value)})". JSON.stringify makes it a valid JS string whatever the characters,
+    // and escapeHtml makes it safe in the attribute; the browser decodes it back before the JS runs.
+    function jsArg(value) {
+      return escapeHtml(JSON.stringify(String(value == null ? '' : value)));
     }
 
     function stableStringify(value) {
@@ -5276,6 +5652,7 @@
         const timestamp = l && l.timestamp ? l.timestamp : null;
         const model = l && l.model ? l.model : '(unknown model)';
         const resolvedModel = l && l.resolvedModel ? l.resolvedModel : null;
+        const requestedModel = l && l.requestedModel && l.requestedModel !== l.model ? l.requestedModel : null;
         const sourceMessages = Array.isArray(l && l.messages)
           ? [...l.messages].reverse()
           : (typeof (l && l.messages) === 'string' ? [{ role: 'raw', content: l.messages }] : []);
@@ -5285,7 +5662,7 @@
           const dedupeKey = `${getLocalDayKey(timestamp)}:${simpleHash(normalizeMessageForHash(assistantCandidate))}`;
           if (!seen.has(dedupeKey)) {
             seen.add(dedupeKey);
-            deduped.push({ role: 'assistant', content: l.response, timestamp, model, resolvedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
+            deduped.push({ role: 'assistant', content: l.response, timestamp, model, resolvedModel, requestedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
           }
         }
 
@@ -5294,7 +5671,7 @@
           const dedupeKey = `${getLocalDayKey(timestamp)}:${simpleHash(normalizeMessageForHash(toolCallsCandidate))}`;
           if (!seen.has(dedupeKey)) {
             seen.add(dedupeKey);
-            deduped.push({ role: 'assistant', content: l.tool_calls, timestamp, model, resolvedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
+            deduped.push({ role: 'assistant', content: l.tool_calls, timestamp, model, resolvedModel, requestedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
           }
         }
 
@@ -5303,7 +5680,7 @@
           const dedupeKey = `${getLocalDayKey(timestamp)}:${simpleHash(normalizeMessageForHash(functionCallCandidate))}`;
           if (!seen.has(dedupeKey)) {
             seen.add(dedupeKey);
-            deduped.push({ role: 'assistant', content: l.function_call, timestamp, model, resolvedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
+            deduped.push({ role: 'assistant', content: l.function_call, timestamp, model, resolvedModel, requestedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
           }
         }
 
@@ -5321,7 +5698,7 @@
           const dedupeKey = `${getLocalDayKey(timestamp)}:${simpleHash(normalizeMessageForHash(candidate))}`;
           if (seen.has(dedupeKey)) continue;
           seen.add(dedupeKey);
-          deduped.push({ role, content, timestamp, model, resolvedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
+          deduped.push({ role, content, timestamp, model, resolvedModel, requestedModel, tsMs: Date.parse(timestamp || ''), seq: insertSeq++ });
         }
       }
 
@@ -5361,6 +5738,7 @@
               <span>${dateStr}</span>
               <span>•</span>
               <span>${escapeHtml(item.model || '(unknown model)')}</span>
+              ${item.requestedModel ? `<span>•</span><span style="font-family:monospace;">asked: ${escapeHtml(item.requestedModel)}</span>` : ''}
               ${item.resolvedModel ? `<span>•</span><span style="color:var(--status-info-text);">resolved: ${escapeHtml(item.resolvedModel)}</span>` : ''}
             </div>
           </div>
@@ -5372,12 +5750,60 @@
       document.getElementById(id)?.classList.toggle('expanded');
     }
 
+    // Opens the drawer for a table row by its stable row key (provider::modelId), looked up in the current data.
+    function openDrawerByRow(rowKey) {
+      const model = allModels.find(x => getModelRowKey(x) === rowKey);
+      if (model) openDrawer(model);
+    }
+
     function openDrawer(m) {
       openDrawerModelId = m.modelId;
       document.getElementById('drawer-title').textContent = m.label;
       updateDrawerContent(m);
       document.getElementById('drawer').classList.add('open');
       document.getElementById('overlay').classList.add('active');
+    }
+
+    function renderDrawerContext(m) {
+      const info = m.ctxInfo;
+      const fmt = ModelRelaySearch.formatTokens;
+      const sub = (text) => `<div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px;">${escapeHtml(text)}</div>`;
+      if (!info || !info.usable) {
+        const reason = info && info.reason === 'model-maximum'
+          ? `Only the model's maximum (${fmt(info.reportedTokens)}) is known, not what this provider allocates, so min_ctx routing skips this model.`
+          : 'Unknown, so min_ctx routing skips this model.';
+        return `<div style="font-weight:700; color:var(--text-muted);">N/A</div>${sub(reason)}`;
+      }
+      if (info.capped) {
+        return `<div style="font-weight:700;"><span class="ctx-capped">${fmt(info.tokens)} ⚠</span></div>${sub(`Reported ${formatContextDisplay(m.ctx)}, capped at ${fmt(info.quotaTokens)} by the observed rate-limit quota. min_ctx routing uses ${fmt(info.tokens)}.`)}`;
+      }
+      return `<div style="font-weight:700;">${fmt(info.tokens)}</div>${sub(`Reported ${formatContextDisplay(m.ctx)} by the provider. min_ctx routing uses this value.`)}`;
+    }
+
+    function renderDrawerReliability(m) {
+      const t = m.telemetry;
+      const card = (inner) => `<div style="background: var(--chat-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--border); margin: -16px 0 32px;">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">Real-traffic reliability <span style="font-weight:400;">(recent requests through the router, decayed over 24h)</span></div>${inner}</div>`;
+      if (!t || !(t.samples > 0)) {
+        return card('<div style="font-size:0.8rem; color:var(--text-muted);">Nothing recorded yet. Stats appear once this model serves requests through the router.</div>');
+      }
+      const pct = Math.round(t.successRate * 100);
+      const color = pct >= 95 ? 'var(--success)' : (pct >= 80 ? 'var(--warning)' : 'var(--error)');
+      const stat = (label, value, valueStyle = '') => `<div><div style="font-size:0.68rem; color:var(--text-muted);">${label}</div><div style="font-weight:700; ${valueStyle}">${value}</div></div>`;
+      const routing = t.multiplier < 1
+        ? `×${t.multiplier.toFixed(2)} demoted`
+        : (t.confidence === 0 ? 'Too few samples' : 'Not demoted');
+      const failures = Object.entries(t.failures || {}).filter(([, n]) => n > 0.05)
+        .map(([kind, n]) => `<span class="model-tag" title="${escapeHtml(kind)}">${escapeHtml(FAILURE_LABELS[kind] || kind)}: ${Math.round(n * 10) / 10}</span>`).join('');
+      return card(`
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); gap:12px;">
+          ${stat('Success rate', `${pct}%`, `color:${color};`)}
+          ${stat('Samples', `~${Math.round(t.samples)}`)}
+          ${stat('Time to first token', t.ttftMs ? `${t.ttftMs}ms` : '—')}
+          ${stat('Tokens / sec', t.tokensPerSec ? String(t.tokensPerSec) : '—')}
+          ${stat('Routing', routing, t.multiplier < 1 ? 'color:var(--error);' : '')}
+        </div>
+        <div class="model-tag-row" style="margin-top:12px;">${failures || '<span style="font-size:0.72rem; color:var(--text-muted);">No failures recorded</span>'}</div>`);
     }
 
     function updateDrawerContent(m) {
@@ -5427,16 +5853,16 @@
         <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
           <div style="min-width:0; flex:1;">
             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Model ID</div>
-            <div style="font-family: monospace; background: var(--surface-alt); padding: 12px; border-radius: 8px; font-size: 0.875rem; word-break:break-all;">${m.modelId}</div>
+            <div style="font-family: monospace; background: var(--surface-alt); padding: 12px; border-radius: 8px; font-size: 0.875rem; word-break:break-all;">${escapeHtml(m.modelId)}</div>
           </div>
           <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
-            <button onclick="pinModel('${isModelPinned ? '' : m.modelId}', '${m.providerKey}')" style="background: ${isModelPinned ? 'var(--status-info-bg)' : 'var(--surface-alt)'}; border: ${isModelPinned ? '1px solid var(--status-info-border)' : '1px solid transparent'}; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${isModelPinned ? 'var(--status-info-text)' : 'var(--text)'}; cursor: pointer;">
+            <button onclick="pinModel(${jsArg(isModelPinned ? '' : m.modelId)}, ${jsArg(m.providerKey)})" style="background: ${isModelPinned ? 'var(--status-info-bg)' : 'var(--surface-alt)'}; border: ${isModelPinned ? '1px solid var(--status-info-border)' : '1px solid transparent'}; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${isModelPinned ? 'var(--status-info-text)' : 'var(--text)'}; cursor: pointer;">
               ${isModelPinned ? '📌 Unpin Model' : '📌 Pin Model'}
             </button>
-            <button onclick="pingModelNow('${m.modelId}')" style="background: var(--status-info-bg); border: 1px solid var(--status-info-border); padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: var(--status-info-text); cursor: pointer;">
+            <button onclick="pingModelNow(${jsArg(m.modelId)})" style="background: var(--status-info-bg); border: 1px solid var(--status-info-border); padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: var(--status-info-text); cursor: pointer;">
               📶 Ping Now
             </button>
-            <button onclick="toggleBan('${m.modelId}', '${m.status}')" style="background: ${m.status === 'banned' ? 'var(--text-muted)' : 'var(--status-error-bg)'}; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${m.status === 'banned' ? 'var(--input-bg)' : 'var(--status-error-text)'}; cursor: pointer;">
+            <button onclick="toggleBan(${jsArg(m.modelId)}, ${jsArg(m.status)})" style="background: ${m.status === 'banned' ? 'var(--text-muted)' : 'var(--status-error-bg)'}; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${m.status === 'banned' ? 'var(--input-bg)' : 'var(--status-error-text)'}; cursor: pointer;">
               ${m.status === 'banned' ? 'Unban Model' : 'Ban Model'}
             </button>
           </div>
@@ -5450,10 +5876,11 @@
             <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 6px;">${escapeHtml(getQualitySourceDisplay(m.qualitySource).label)}${m.qualityDetail ? ` · ${escapeHtml(m.qualityDetail)}` : ''}</div>
           </div>
           <div style="background: var(--chat-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--border);">
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Context</div>
-            <div style="font-weight: 700;">${formatContextDisplay(m.ctx)}</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Context <span style="font-weight:400;">(effective)</span></div>
+            ${renderDrawerContext(m)}
           </div>
         </div>
+        ${renderDrawerReliability(m)}
         <div class="tag-workbench">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
             <div>
@@ -5591,6 +6018,9 @@
 
     initializeChat();
     updateLogsPauseButton();
+    restoreUiState();
+    renderCtxFilterSelect();
+    renderTagFilterChips();
     setInterval(fetchData, 4000);
     fetchData();
   </script>
