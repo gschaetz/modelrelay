@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
-import { sources, MODELS, canonicalizeModelId, getPreferredModelContext, getPreferredModelLabel, getScore, resolveAliasedModelId } from '../sources.js'
+import { cleanModelDisplayLabel as cleanModelDisplayLabelForSafetyTests, sources, MODELS, canonicalizeModelId, getPreferredModelContext, getPreferredModelLabel, getScore, resolveAliasedModelId } from '../sources.js'
 import { TAG_VOCABULARY, MODEL_TAGS, getModelTags as getBuiltInModelTags } from '../tags.js'
 import {
   getAvg,
@@ -38,14 +38,15 @@ import {
 } from '../lib/utils.js'
 import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, summarizeTelemetryEntry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
 import '../public/model-search.js'
+import { capLength, isSafeObjectKey, stripTrailingSuffixes, trimEndWhile, trimStartWhile, trimWhile } from '../lib/text.js'
 import { OPENCLAW_ROUTING_PRESETS, applyOpenClawConfig, buildOpenClawProviderConfig } from '../lib/onboard.js'
 import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { buildOpenRouterQualityIndex, fitLinearRegression, qualityLookupKeys, resolveModelQuality } from '../lib/model-quality.js'
 import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags, normalizeTag, normalizeTags, setModelTags } from '../lib/tags.js'
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
-import { exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint } from '../lib/config.js'
+import { normalizeSecret, buildOpenAICompatibleInstanceKey as buildInstanceKeyForSafetyTests, exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint } from '../lib/config.js'
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse } from '../lib/server.js'
+import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse } from '../lib/server.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -3581,5 +3582,139 @@ describe('dashboard inline handler and markup safety', () => {
     for (const raw of ['${p.key}', '${m.label}</div>', '${p.name}</h3>', '${l.model}</span>', '<span>${l.provider}</span>', '${m.modelId}</div>', 'href="${p.signupUrl}"']) {
       assert.equal(html.includes(raw), false, `raw interpolation present: ${raw}`)
     }
+  })
+})
+
+
+describe('linear-time text helpers', () => {
+  it('trims either or both ends by predicate', () => {
+    const dash = (ch) => ch === '-'
+    assert.equal(trimStartWhile('--a-b--', dash), 'a-b--')
+    assert.equal(trimEndWhile('--a-b--', dash), '--a-b')
+    assert.equal(trimWhile('--a-b--', dash), 'a-b')
+    assert.equal(trimWhile('----', dash), '')
+    assert.equal(trimWhile('', dash), '')
+    assert.equal(trimWhile('abc', dash), 'abc')
+  })
+
+  it('strips runs of trailing suffixes case-insensitively', () => {
+    const suffixes = [':free', ':optimized', ':cloud']
+    assert.equal(stripTrailingSuffixes('model:free', suffixes), 'model')
+    assert.equal(stripTrailingSuffixes('model:optimized:free', suffixes), 'model')
+    assert.equal(stripTrailingSuffixes('model:FREE:Cloud', suffixes), 'model')
+    assert.equal(stripTrailingSuffixes('model:free:x', suffixes), 'model:free:x')
+    assert.equal(stripTrailingSuffixes('free', suffixes), 'free')
+    assert.equal(stripTrailingSuffixes(':free', suffixes), '')
+    assert.equal(stripTrailingSuffixes('', suffixes), '')
+  })
+
+  it('caps length and recognises unsafe object keys', () => {
+    assert.equal(capLength('abcdef', 3), 'abc')
+    assert.equal(capLength('ab', 3), 'ab')
+    for (const key of ['__proto__', 'constructor', 'prototype', '', 'x'.repeat(201), 42, null, undefined, {}]) assert.equal(isSafeObjectKey(key), false, String(key))
+    for (const key of ['nvidia', 'openai-compatible:my-vllm', 'a_b', 'proto', '__proto']) assert.equal(isSafeObjectKey(key), true, key)
+  })
+})
+
+describe('regex replacements keep their exact behavior', () => {
+  // Deterministic pseudo-random strings built from the characters these functions care about.
+  const pieces = ['a', 'b', 'x', '-', '--', '_', ' ', '\t', '\n', ':', ':free', ':FREE', ':cloud', ':optimized', 'free', '\u2588', '\u2580', '\u259f', '.', '/']
+  let seed = 12345
+  const rand = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n }
+  const corpus = Array.from({ length: 4000 }, () => Array.from({ length: rand(14) }, () => pieces[rand(pieces.length)]).join(''))
+
+  it('canonicalizeModelId strips trailing :free/:optimized/:cloud runs exactly like the old regex', () => {
+    const old = (s) => s.replace(/(?::(?:free|optimized|cloud))+$/i, '')
+    for (const s of corpus) assert.equal(stripTrailingSuffixes(s, [':free', ':optimized', ':cloud']), old(s), JSON.stringify(s))
+  })
+
+  it('normalizeTag matches the old regex chain', () => {
+    const old = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '').replace(/^[-_]+|[-_]+$/g, '').slice(0, 32)
+    for (const s of corpus) assert.equal(normalizeTag(s), old(s), JSON.stringify(s))
+    assert.equal(normalizeTag(null), '')
+    assert.equal(normalizeTag('  --My Tag_-- '), 'my-tag')
+  })
+
+  it('OpenAI-compatible instance keys match the old regex chain', () => {
+    const old = (id) => { const t = String(id || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''); return t ? `openai-compatible:${t}` : null }
+    for (const s of corpus) assert.equal(buildInstanceKeyForSafetyTests(s), old(s), JSON.stringify(s))
+    assert.equal(buildInstanceKeyForSafetyTests('  --My Endpoint!! '), 'openai-compatible:my-endpoint')
+    assert.equal(buildInstanceKeyForSafetyTests('!!!'), null)
+  })
+
+  it('normalizeSecret drops trailing whitespace and block characters like the old regex', () => {
+    const old = (v) => typeof v === 'string' ? v.replace(/[\s\u2580-\u259F]+$/g, '').trim() : ''
+    for (const s of corpus) assert.equal(normalizeSecret(s), old(s), JSON.stringify(s))
+    assert.equal(normalizeSecret('sk-123 \u2588\u2588\t\n'), 'sk-123')
+    assert.equal(normalizeSecret(42), '')
+  })
+})
+
+describe('adversarial input cannot stall the router', () => {
+  // Each of these took minutes (quadratic) with the old regexes. Linear code finishes in milliseconds; the
+  // generous bound keeps the test stable on slow CI while still failing loudly on a regression.
+  const timed = (fn) => { const start = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - start) / 1e6 }
+  const N = 2_000_000
+
+  it('model id with a huge run of :free', () => {
+    assert.ok(timed(() => stripTrailingSuffixes(':free'.repeat(N / 5) + 'x', [':free', ':optimized', ':cloud'])) < 1000)
+  })
+  it('endpoint name with a huge run of dashes', () => {
+    assert.ok(timed(() => buildInstanceKeyForSafetyTests('x' + '-'.repeat(N) + 'x')) < 1000)
+  })
+  it('tag with a huge run of dashes and underscores', () => {
+    assert.ok(timed(() => normalizeTag('x' + '-_'.repeat(N / 2) + 'x')) < 1000)
+  })
+  it('API key with a huge run of whitespace', () => {
+    assert.ok(timed(() => normalizeSecret('\t'.repeat(N) + 'x')) < 1000)
+  })
+  it('display labels are capped before the trailing-anchored regexes run', () => {
+    assert.ok(timed(() => cleanModelDisplayLabelForSafetyTests(' '.repeat(N) + 'x')) < 1000)
+    assert.ok(timed(() => cleanModelDisplayLabelForSafetyTests(' ('.repeat(N / 2))) < 1000)
+  })
+})
+
+describe('prototype pollution guards', () => {
+  const polluted = () => Object.keys(Object.prototype)
+
+  it('isKnownProviderKey accepts real providers and rejects prototype keys', () => {
+    for (const key of ['nvidia', 'groq', 'kiro', 'openai-compatible', 'openai-compatible:my-vllm']) assert.equal(isKnownProviderKey(key, {}), true, key)
+    for (const key of ['__proto__', 'constructor', 'prototype', 'toString', 'hasOwnProperty', 'nope', '', null, undefined, 42, {}, 'openai-compatible:../x', 'openai-compatible:a b', 'openai-compatible:']) assert.equal(isKnownProviderKey(key, {}), false, String(key))
+  })
+
+  it('isKnownProviderKey honours providers already in the saved config, own properties only', () => {
+    assert.equal(isKnownProviderKey('legacy', { providers: { legacy: {} } }), true)
+    assert.equal(isKnownProviderKey('legacy', { providers: {} }), false)
+    assert.equal(isKnownProviderKey('toString', { providers: {} }), false)
+    assert.equal(isKnownProviderKey('__proto__', JSON.parse('{"providers":{"__proto__":{"polluted":true}}}')), false)
+  })
+
+  it('model id alias lookup returns strings for prototype member names', () => {
+    for (const id of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+      assert.equal(resolveAliasedModelId(id), id)
+      assert.equal(typeof canonicalizeModelId(id).base, 'string')
+    }
+    assert.equal(resolveAliasedModelId('deepseek-v3.2'), 'deepseek-ai/deepseek-v3.2')
+  })
+
+  it('setModelTags refuses prototype keys and leaves Object.prototype alone', () => {
+    const config = {}
+    for (const id of ['__proto__', 'constructor', 'prototype']) {
+      const result = setModelTags(config, id, ['evil'])
+      assert.deepEqual(result.tags, [])
+    }
+    assert.equal(({}).evil, undefined)
+    assert.deepEqual(polluted(), [])
+    assert.deepEqual(Object.keys(config.modelTags), [])
+    assert.deepEqual(setModelTags(config, 'nvidia/some-model', ['ok']).tags, ['ok'])
+  })
+
+  it('normalizeConfigShape drops __proto__ model tag keys from an imported config', () => {
+    const hostile = JSON.parse('{"modelTags":{"__proto__":["evil"],"real-model":["good"]}}')
+    const shaped = normalizeConfigShape(hostile)
+    assert.equal(Object.getPrototypeOf(shaped.modelTags), Object.prototype)
+    assert.equal(shaped.modelTags.evil, undefined)
+    assert.deepEqual(shaped.modelTags['real-model'], ['good'])
+    assert.deepEqual(polluted(), [])
   })
 })

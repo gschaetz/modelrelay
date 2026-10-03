@@ -280,7 +280,7 @@ async function main() {
           existing.push(key)
           config.apiKeys[provider] = existing
           saveConfig(config)
-          console.log(chalk.green(`✔ Added key to ${provider} (now ${existing.length} keys)`))
+          console.log(chalk.green(`✔ Added key to ${provider}`))
         }
       } else if (typeof existing === 'string' && existing) {
         config.apiKeys[provider] = [existing, key]
@@ -324,7 +324,7 @@ async function main() {
           config.apiKeys[provider] = existing
         }
         saveConfig(config)
-        console.log(chalk.green(`✔ Removed key [${idx}] ${removed.slice(0, 4)}... from ${provider} (${existing.length} remaining)`))
+        console.log(chalk.green(`✔ Removed key [${idx}] from ${provider}`))
       } else {
         const idx2 = existing.indexOf(keyOrIndex)
         if (idx2 !== -1) {
@@ -337,7 +337,7 @@ async function main() {
             config.apiKeys[provider] = existing
           }
           saveConfig(config)
-          console.log(chalk.green(`✔ Removed key ${keyOrIndex.slice(0, 4)}... from ${provider} (${existing.length} remaining)`))
+          console.log(chalk.green(`✔ Removed the key from ${provider}`))
         } else {
           console.error(`Key not found in ${provider} pool: ${keyOrIndex}`)
           process.exit(1)
@@ -412,8 +412,6 @@ async function main() {
       console.log(chalk.bold(`${name} (${provider})`) + chalk.dim(` ${isEnabled ? 'enabled' : 'disabled'} | ${pool.length} account${pool.length !== 1 ? 's' : ''} | maxTurns: ${maxTurns > 0 ? maxTurns : 'unlimited'}`))
 
       for (let i = 0; i < pool.length; i++) {
-        const key = pool[i]
-        const masked = key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : `${key.slice(0, 2)}***`
         const liveAcct = live?.accounts?.find(a => a.index === i)
         const requests = liveAcct?.requests ?? 0
         const isRateLimited = liveAcct?.rateLimited ?? false
@@ -424,7 +422,7 @@ async function main() {
         else if (hitMaxTurns) statusIcon = chalk.yellow('🟡')
 
         const rotation = live?.currentIdx === i ? ' ← next' : ''
-        console.log(`  ${statusIcon} [${i}] ${masked}${rotation}  requests: ${requests}`)
+        console.log(`  ${statusIcon} [${i}]${rotation}  requests: ${requests}`)
       }
       console.log()
     }
