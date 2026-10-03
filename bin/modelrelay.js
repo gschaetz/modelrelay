@@ -11,7 +11,6 @@ import { getAutostartStatus, installAutostart, startAutostart, uninstallAutostar
 import { getPreferredLanIpv4Address } from '../lib/network.js'
 import { runUpdateCommand } from '../lib/update.js'
 import chalk from 'chalk'
-import { createHash } from 'node:crypto'
 
 function printHelp() {
   console.log('modelrelay')
@@ -413,9 +412,6 @@ async function main() {
       console.log(chalk.bold(`${name} (${provider})`) + chalk.dim(` ${isEnabled ? 'enabled' : 'disabled'} | ${pool.length} account${pool.length !== 1 ? 's' : ''} | maxTurns: ${maxTurns > 0 ? maxTurns : 'unlimited'}`))
 
       for (let i = 0; i < pool.length; i++) {
-        const key = pool[i]
-        // A short one-way fingerprint tells accounts apart without printing any part of the key itself.
-        const masked = `#${createHash('sha256').update(key).digest('hex').slice(0, 6)}`
         const liveAcct = live?.accounts?.find(a => a.index === i)
         const requests = liveAcct?.requests ?? 0
         const isRateLimited = liveAcct?.rateLimited ?? false
@@ -426,7 +422,7 @@ async function main() {
         else if (hitMaxTurns) statusIcon = chalk.yellow('🟡')
 
         const rotation = live?.currentIdx === i ? ' ← next' : ''
-        console.log(`  ${statusIcon} [${i}] ${masked}${rotation}  requests: ${requests}`)
+        console.log(`  ${statusIcon} [${i}]${rotation}  requests: ${requests}`)
       }
       console.log()
     }

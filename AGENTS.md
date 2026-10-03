@@ -68,7 +68,7 @@ The admin API and the proxy are unauthenticated, accept request bodies of severa
 1. **No quadratic regexes on user input.** Do not use trailing-anchored or edge-trimming patterns such as `/x+$/`, `/^x+|x+$/` or `/\s+word\s*$/` on anything a caller can influence (endpoint names, tags, model ids, API keys, labels from discovered endpoints). Use the linear helpers in `lib/text.js` (`trimWhile`, `trimEndWhile`, `stripTrailingSuffixes`), or `capLength` before the regex. Keep behavior identical and prove it with a parity test against the old regex.
 2. **Never index a plain object with a user-supplied key unchecked.** `obj['__proto__']` resolves to `Object.prototype`, so `obj[key].x = 1` pollutes every object. Validate keys with `isSafeObjectKey`, validate provider keys with `isKnownProviderKey`, and use own-property checks (`Object.prototype.hasOwnProperty.call`) instead of truthiness on plain objects such as `sources` or `MODEL_ID_ALIASES`.
 3. **Bound input sizes.** Admin routes parse JSON with a 1 MB limit (`MODELRELAY_API_JSON_LIMIT`); validate string lengths on routes that store them.
-4. **Don't print secrets.** The CLI never prints any part of a key, nor counts derived from the key list; `modelrelay accounts` identifies keys by a short one-way fingerprint (`#a1b2c3`).
+4. **Don't print secrets.** The CLI never prints any part of a key, nor counts derived from the key list; `modelrelay accounts` identifies keys only by their index.
 5. The suites `regex replacements keep their exact behavior`, `adversarial input cannot stall the router` and `prototype pollution guards` enforce this. Extend them when you add a new input path.
 
 ## Git Commits
