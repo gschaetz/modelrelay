@@ -945,6 +945,22 @@
       background:var(--input-bg); color:var(--text); font-size:0.85rem;
     }
     .logs-search-input:focus { outline:none; border-color:var(--accent); }
+    #login-overlay {
+      position: fixed; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center;
+      background: rgba(15, 17, 23, 0.72); backdrop-filter: blur(4px); padding: 16px;
+    }
+    .login-card {
+      width: 100%; max-width: 380px; padding: 28px; border-radius: 16px; background: var(--card);
+      border: 1px solid var(--border); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 12px;
+    }
+    .login-card h2 { margin: 0; font-size: 1.25rem; }
+    .login-card p { margin: 0; color: var(--text-muted); font-size: 0.85rem; line-height: 1.45; }
+    .login-card input {
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg);
+      color: var(--text); font-size: 0.95rem;
+    }
+    .login-card input:focus { outline: none; border-color: var(--accent); }
+    #login-error { min-height: 18px; color: var(--status-error-text); font-size: 0.8rem; }
     .filter-count-badge {
       display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px;
       border-radius:999px; background:var(--accent); color:#fff; font-size:0.68rem; font-weight:700;
@@ -1807,6 +1823,7 @@
         <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.78rem; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           <span>Version <span id="dashboard-version">Loading...</span></span>
           <a href="https://schaetzkc.com/modelrelay/" target="_blank" rel="noopener" title="Open the modelrelay documentation" style="color: var(--accent); text-decoration: none;">Docs ↗</a>
+          <a href="#" id="signout-link" onclick="signOut(); return false;" style="display:none; color: var(--accent); text-decoration: none;">Sign out</a>
           <span id="update-pill" style="display:none;"></span>
           <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode" style="background: var(--surface-alt); border: 1px solid var(--border); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 4px; color: var(--text);">
             <span id="theme-icon">🌙</span>
@@ -2278,9 +2295,83 @@
     <div id="provider-sync-body" style="padding:18px 22px 22px; overflow:auto; max-height:calc(80vh - 84px);"></div>
   </div>
 
+  <div id="login-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <form class="login-card" onsubmit="submitLogin(event)">
+      <img src="/logo.png" width="48" height="48" alt="" style="border-radius:10px;">
+      <h2 id="login-title">Sign in</h2>
+      <p>This router's admin API is protected. Enter the admin token (the value of <code>MODELRELAY_ADMIN_TOKEN</code>).</p>
+      <input type="password" id="login-token" autocomplete="current-password" placeholder="Admin token" required>
+      <div id="login-error" role="alert"></div>
+      <button type="submit" class="btn">Sign in</button>
+    </form>
+  </div>
   <script src="/model-search.js"></script>
   <script>
     // Theme toggle
+    // ---- Admin sign-in (only active when the router has MODELRELAY_ADMIN_TOKEN set) --------------------------------
+    let loginVisible = false;
+    (function() {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async (...args) => {
+        const response = await nativeFetch(...args);
+        try {
+          const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+          // A 401 from the admin API means the session ended (or there is none yet): ask for the token.
+          if (response.status === 401 && url.startsWith('/api/') && !url.startsWith('/api/auth/')) showLogin();
+        } catch { /* never let the wrapper break a request */ }
+        return response;
+      };
+    })();
+
+    function showLogin() {
+      loginVisible = true;
+      const overlay = document.getElementById('login-overlay');
+      overlay.style.display = 'flex';
+      const input = document.getElementById('login-token');
+      if (input) { input.value = ''; input.focus(); }
+    }
+
+    function hideLogin() {
+      loginVisible = false;
+      document.getElementById('login-overlay').style.display = 'none';
+      document.getElementById('login-error').textContent = '';
+    }
+
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/status');
+        if (!res.ok) return;
+        const status = await res.json();
+        document.getElementById('signout-link').style.display = status.authRequired ? '' : 'none';
+        if (status.authRequired && !status.authenticated) showLogin();
+      } catch { /* the router is unreachable; the normal polling will show that */ }
+    }
+
+    async function submitLogin(event) {
+      event.preventDefault();
+      const errorEl = document.getElementById('login-error');
+      errorEl.textContent = '';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: document.getElementById('login-token').value }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { errorEl.textContent = body.error || 'Sign-in failed.'; return; }
+        hideLogin();
+        document.getElementById('signout-link').style.display = body.authRequired ? '' : 'none';
+        fetchData();
+      } catch (err) {
+        errorEl.textContent = 'Could not reach the router.';
+      }
+    }
+
+    async function signOut() {
+      try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
+      showLogin();
+    }
+
     // An explicit choice (the toggle) always wins; with none saved, follow the system setting.
     (function() {
       let saved = null;
@@ -2401,6 +2492,7 @@
     }
 
     async function fetchData() {
+      if (loginVisible) return;
       try {
         if (!metaLoaded) {
           loadMeta();
@@ -4445,13 +4537,13 @@
       loadSettings();
     }
 
+    // The list endpoint only carries masked keys; the full key is requested on demand, one key at a time.
     async function getConfiguredProviderKey(providerKey) {
-      const res = await fetch('/api/config');
+      const res = await fetch(`/api/config/keys/${encodeURIComponent(providerKey)}/0`);
+      if (res.status === 404) return '';
       if (!res.ok) throw new Error('Failed to load the configured key.');
-      const providers = await res.json();
-      const provider = providers.find(item => item.key === providerKey);
-      const account = provider && Array.isArray(provider.apiKeyPool) ? provider.apiKeyPool[0] : null;
-      return account && typeof account.key === 'string' ? account.key : '';
+      const body = await res.json();
+      return typeof body.key === 'string' ? body.key : '';
     }
 
     async function toggleProviderKeyVisibility(providerKey, button) {
@@ -4617,21 +4709,11 @@
       const val = input.value.trim();
       if (!val) return;
       try {
-        const res = await fetch('/api/config');
-        const providers = await res.json();
-        const p = providers.find(pr => pr.key === providerKey);
-        if (!p) return;
-        let newPool;
-        if (Array.isArray(p.apiKeyPool) && p.apiKeyPool.length > 0) {
-          const existingKeys = p.apiKeyPool.map(a => a.key);
-          newPool = [...existingKeys, val];
-        } else {
-          newPool = [val];
-        }
+        // The server appends the key to the pool, so the client never holds the other keys.
         await fetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ providerKey, apiKeys: newPool })
+          body: JSON.stringify({ providerKey, addApiKey: val })
         });
         input.value = '';
         await loadSettings();
@@ -4641,24 +4723,11 @@
 
     async function removeAccountKey(providerKey, index) {
       try {
-        const res = await fetch('/api/config');
-        const providers = await res.json();
-        const p = providers.find(pr => pr.key === providerKey);
-        if (!p || !Array.isArray(p.apiKeyPool)) return;
-        const newPool = p.apiKeyPool.map(a => a.key).filter((_, i) => i !== index);
-        if (newPool.length === 0) {
-          await fetch('/api/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ providerKey, apiKeys: [] })
-          });
-        } else {
-          await fetch('/api/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ providerKey, apiKeys: newPool })
-          });
-        }
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerKey, removeApiKeyIndex: index })
+        });
         await loadSettings();
         await loadAccountStatus();
       } catch (err) { console.error(err); }
@@ -6022,7 +6091,7 @@
     renderCtxFilterSelect();
     renderTagFilterChips();
     setInterval(fetchData, 4000);
-    fetchData();
+    checkAuth().then(() => fetchData());
   </script>
 </body>
 
