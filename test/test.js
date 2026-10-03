@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -37,6 +37,9 @@ import {
   VERDICT_ORDER,
 } from '../lib/utils.js'
 import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, summarizeTelemetryEntry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
+import http from 'node:http'
+import express from 'express'
+import { SESSION_COOKIE, buildClearedCookie, buildSessionCookie, createAdminAuth, createAdminMiddleware, createAuthRoutes, evaluateRequestOrigin, isAllowedHost, parseAllowedHosts, parseAllowedOrigins, parseCookies, parseHostHeader } from '../lib/admin-guard.js'
 import '../public/model-search.js'
 import { capLength, isSafeObjectKey, stripTrailingSuffixes, trimEndWhile, trimStartWhile, trimWhile } from '../lib/text.js'
 import { OPENCLAW_ROUTING_PRESETS, applyOpenClawConfig, buildOpenClawProviderConfig } from '../lib/onboard.js'
@@ -3716,5 +3719,254 @@ describe('prototype pollution guards', () => {
     assert.equal(shaped.modelTags.evil, undefined)
     assert.deepEqual(shaped.modelTags['real-model'], ['good'])
     assert.deepEqual(polluted(), [])
+  })
+})
+
+
+describe('admin guard: host header', () => {
+  it('parses host headers with ports, IPv6 and bad input', () => {
+    assert.deepEqual(parseHostHeader('Localhost:7352'), { host: 'localhost', port: '7352' })
+    assert.deepEqual(parseHostHeader('example.com'), { host: 'example.com', port: '' })
+    assert.deepEqual(parseHostHeader('[::1]:7352'), { host: '::1', port: '7352' })
+    assert.deepEqual(parseHostHeader('192.168.1.5:80'), { host: '192.168.1.5', port: '80' })
+    for (const bad of ['', '  ', 'a b', 'host:abc', 'host:99999999', '[::1', '[nope]:80', 'ex ample.com', 'a'.repeat(300), null, undefined, 42]) assert.equal(parseHostHeader(bad), null, String(bad))
+  })
+
+  it('parses allow lists', () => {
+    assert.deepEqual(parseAllowedHosts(' Dash.Example.com , other.example:7352,* '), ['dash.example.com', 'other.example', '*'])
+    assert.deepEqual(parseAllowedHosts(''), [])
+    assert.deepEqual(parseAllowedHosts(undefined), [])
+    assert.deepEqual(parseAllowedOrigins('https://a.example.com, http://b.example:8080/path, nonsense'), ['https://a.example.com', 'http://b.example:8080'])
+  })
+
+  it('allows IP literals, localhost, this machine and listed hosts only', () => {
+    const opts = { extraHosts: ['dash.example.com'], machineName: 'MyBox' }
+    for (const host of ['localhost:7352', 'LOCALHOST', 'app.localhost:7352', '127.0.0.1:7352', '[::1]:7352', '192.168.1.5', '10.0.0.7:7352', 'mybox', 'mybox:7352', 'mybox.local:7352', 'dash.example.com', 'dash.example.com:443']) {
+      assert.equal(isAllowedHost(host, opts), true, host)
+    }
+    for (const host of ['evil.example.com', 'localhost.evil.com', 'dash.example.com.evil.net', 'xdash.example.com', 'mybox.evil.com', 'attacker.com:7352', 'a b', '']) {
+      assert.equal(isAllowedHost(host, opts), false, host)
+    }
+    assert.equal(isAllowedHost('anything.example.org', { extraHosts: ['*'] }), true)
+    assert.equal(isAllowedHost(undefined, opts), true)
+  })
+})
+
+describe('admin guard: origin and fetch metadata', () => {
+  const host = 'localhost:7352'
+  it('allows same-origin requests and requests without an Origin', () => {
+    assert.equal(evaluateRequestOrigin({ origin: 'http://localhost:7352', host }).ok, true)
+    assert.equal(evaluateRequestOrigin({ origin: undefined, host }).ok, true)
+    assert.equal(evaluateRequestOrigin({ origin: undefined, host, secFetchSite: 'same-origin' }).ok, true)
+    assert.equal(evaluateRequestOrigin({ origin: undefined, host, secFetchSite: 'none' }).ok, true)
+  })
+  it('blocks other origins, opaque origins and cross-site fetches', () => {
+    for (const origin of ['http://127.0.0.1:8099', 'https://evil.example', 'http://localhost:3000', 'http://localhost', 'null', 'not a url']) {
+      assert.equal(evaluateRequestOrigin({ origin, host }).ok, false, origin)
+    }
+    for (const site of ['cross-site', 'same-site']) assert.equal(evaluateRequestOrigin({ origin: undefined, host, secFetchSite: site }).ok, false, site)
+  })
+  it('honours MODELRELAY_ALLOWED_ORIGINS for reverse proxies', () => {
+    assert.equal(evaluateRequestOrigin({ origin: 'https://proxy.example.com', host: 'modelrelay:7352', allowedOrigins: ['https://proxy.example.com'] }).ok, true)
+    assert.equal(evaluateRequestOrigin({ origin: 'https://other.example.com', host: 'modelrelay:7352', allowedOrigins: ['https://proxy.example.com'] }).ok, false)
+  })
+})
+
+describe('admin guard: token and sessions', () => {
+  it('verifies the token in constant time and rejects anything else', () => {
+    const auth = createAdminAuth({ token: 'correct-horse-battery-staple' })
+    assert.equal(auth.enabled, true)
+    assert.equal(auth.verifyToken('correct-horse-battery-staple'), true)
+    for (const bad of ['', 'wrong', 'correct-horse-battery-stapl', 'correct-horse-battery-staple ', null, undefined, 42, {}]) assert.equal(auth.verifyToken(bad), false, String(bad))
+    assert.equal(createAdminAuth({ token: '' }).enabled, false)
+    assert.equal(createAdminAuth({}).enabled, false)
+    assert.equal(createAdminAuth({ token: '' }).verifyToken(''), false)
+  })
+
+  it('creates sessions that expire and can be destroyed', () => {
+    let clock = 1_000
+    const auth = createAdminAuth({ token: 't'.repeat(20), sessionTtlMs: 5_000, now: () => clock })
+    const id = auth.createSession()
+    assert.match(id, /^[0-9a-f]{64}$/)
+    assert.equal(auth.isValidSession(id), true)
+    assert.equal(auth.isValidSession('nope'), false)
+    clock += 4_999
+    assert.equal(auth.isValidSession(id), true)
+    clock += 2
+    assert.equal(auth.isValidSession(id), false)
+    const id2 = auth.createSession()
+    auth.destroySession(id2)
+    assert.equal(auth.isValidSession(id2), false)
+  })
+
+  it('caps the number of live sessions', () => {
+    const auth = createAdminAuth({ token: 't'.repeat(20) })
+    const first = auth.createSession()
+    for (let i = 0; i < 150; i++) auth.createSession()
+    assert.ok(auth.sessionCount() <= 100)
+    assert.equal(auth.isValidSession(first), false)
+  })
+
+  it('locks a client out after repeated failures, and clears on success', () => {
+    let clock = 0
+    const auth = createAdminAuth({ token: 't'.repeat(20), now: () => clock })
+    for (let i = 0; i < 9; i++) auth.recordFailure('1.2.3.4')
+    assert.equal(auth.isLockedOut('1.2.3.4'), false)
+    auth.recordFailure('1.2.3.4')
+    assert.equal(auth.isLockedOut('1.2.3.4'), true)
+    assert.equal(auth.isLockedOut('5.6.7.8'), false)
+    clock += 16 * 60 * 1000
+    assert.equal(auth.isLockedOut('1.2.3.4'), false)
+    auth.recordFailure('9.9.9.9'); auth.clearFailures('9.9.9.9')
+    assert.equal(auth.isLockedOut('9.9.9.9'), false)
+  })
+
+  it('parses cookies and builds session cookies', () => {
+    assert.deepEqual(parseCookies('a=1; modelrelay_session=abc; b=2'), { a: '1', modelrelay_session: 'abc', b: '2' })
+    assert.deepEqual(parseCookies(undefined), {})
+    assert.equal(parseCookies('a=1; a=2').a, '1')
+    const cookie = buildSessionCookie('abc')
+    assert.match(cookie, new RegExp(`^${SESSION_COOKIE}=abc; Path=/; HttpOnly; SameSite=Strict; Max-Age=\\d+$`))
+    assert.match(buildSessionCookie('abc', { secure: true }), /; Secure$/)
+    assert.match(buildClearedCookie(), /Max-Age=0/)
+  })
+})
+
+describe('admin guard: end to end over HTTP', () => {
+  const TOKEN = 'correct-horse-battery-staple'
+  let server, port
+
+  // Node's fetch will not let a test set the Host header, so use http.request.
+  const call = (options) => new Promise((resolve, reject) => {
+    const body = options.body === undefined ? undefined : JSON.stringify(options.body)
+    const req = http.request({ host: '127.0.0.1', port, method: options.method || 'GET', path: options.path || '/api/secret',
+      headers: { host: `localhost:${port}`, ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}), ...(options.headers || {}) } }, (res) => {
+      let data = ''
+      res.on('data', c => { data += c })
+      res.on('end', () => { let json = null; try { json = JSON.parse(data) } catch { /* not json */ } resolve({ status: res.statusCode, headers: res.headers, json }) })
+    })
+    req.on('error', reject)
+    if (body) req.write(body)
+    req.end()
+  })
+  const login = async (token = TOKEN) => call({ method: 'POST', path: '/api/auth/login', body: { token } })
+  const cookieOf = (res) => String(res.headers['set-cookie'] || '').split(';')[0]
+
+  before(async () => {
+    const auth = createAdminAuth({ token: TOKEN })
+    const guard = createAdminMiddleware({ auth, extraHosts: ['dash.example.com'], allowedOrigins: ['https://proxy.example.com'], machineName: 'mybox' })
+    const routes = createAuthRoutes({ auth })
+    const app = express()
+    app.use('/api', guard)
+    app.use('/api', express.json())
+    app.get('/api/auth/status', routes.status)
+    app.post('/api/auth/login', routes.login)
+    app.post('/api/auth/logout', routes.logout)
+    app.get('/api/secret', (req, res) => res.json({ secret: 'the keys' }))
+    app.get('/v1/open', (req, res) => res.json({ open: true }))
+    await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve) })
+    port = server.address().port
+  })
+  after(() => new Promise(resolve => server.close(resolve)))
+
+  it('rejects an unexpected Host before anything else (DNS rebinding)', async () => {
+    const res = await call({ headers: { host: 'evil.example.com' } })
+    assert.equal(res.status, 403)
+    assert.match(res.json.error, /not allowed/)
+    assert.match(res.json.hint, /MODELRELAY_ALLOWED_HOSTS/)
+    assert.equal((await call({ headers: { host: `dash.example.com:${port}` } })).status, 401) // allowed host, but no login yet
+  })
+
+  it('blocks cross-origin browser requests even for simple requests', async () => {
+    const attacker = await call({ headers: { origin: 'http://127.0.0.1:8099' } })
+    assert.equal(attacker.status, 403)
+    assert.match(attacker.json.error, /Cross-origin/)
+    assert.equal((await call({ headers: { 'sec-fetch-site': 'cross-site' } })).status, 403)
+    assert.equal((await call({ method: 'POST', path: '/api/auth/login', headers: { origin: 'http://evil.example' }, body: { token: TOKEN } })).status, 403)
+    assert.equal((await call({ headers: { origin: 'https://proxy.example.com', host: 'mybox' } })).status, 401) // allowed origin, then auth
+  })
+
+  it('never lets admin responses be cached', async () => {
+    assert.equal((await call({})).headers['cache-control'], 'no-store')
+  })
+
+  it('requires sign-in for admin routes but leaves /api/auth open', async () => {
+    const denied = await call({})
+    assert.equal(denied.status, 401)
+    assert.equal(denied.json.authRequired, true)
+    const status = await call({ path: '/api/auth/status' })
+    assert.deepEqual(status.json, { authRequired: true, authenticated: false })
+  })
+
+  it('signs in with the token, then serves admin routes using the session cookie', async () => {
+    const bad = await login('wrong-token')
+    assert.equal(bad.status, 401)
+    assert.equal(bad.headers['set-cookie'], undefined)
+    const ok = await login()
+    assert.equal(ok.status, 200)
+    const setCookie = String(ok.headers['set-cookie'])
+    assert.match(setCookie, /HttpOnly/)
+    assert.match(setCookie, /SameSite=Strict/)
+    assert.equal(/Secure/.test(setCookie), false) // plain http
+    const cookie = cookieOf(ok)
+    const secret = await call({ headers: { cookie } })
+    assert.equal(secret.status, 200)
+    assert.deepEqual(secret.json, { secret: 'the keys' })
+    assert.deepEqual((await call({ path: '/api/auth/status', headers: { cookie } })).json, { authRequired: true, authenticated: true })
+    // signing out ends the session
+    await call({ method: 'POST', path: '/api/auth/logout', headers: { cookie } })
+    assert.equal((await call({ headers: { cookie } })).status, 401)
+  })
+
+  it('marks the cookie Secure when the request came in over https', async () => {
+    const ok = await call({ method: 'POST', path: '/api/auth/login', headers: { 'x-forwarded-proto': 'https' }, body: { token: TOKEN } })
+    assert.match(String(ok.headers['set-cookie']), /; Secure/)
+  })
+
+  it('accepts the token as a Bearer header for scripts', async () => {
+    assert.equal((await call({ headers: { authorization: `Bearer ${TOKEN}` } })).status, 200)
+    assert.equal((await call({ headers: { authorization: 'Bearer nope' } })).status, 401)
+    assert.equal((await call({ headers: { authorization: TOKEN } })).status, 401)
+  })
+
+  it('does not accept a made-up session cookie', async () => {
+    assert.equal((await call({ headers: { cookie: `${SESSION_COOKIE}=${'0'.repeat(64)}` } })).status, 401)
+  })
+
+  it('leaves the /v1 proxy outside the guard', async () => {
+    const res = await call({ path: '/v1/open', headers: { host: 'evil.example.com', origin: 'https://evil.example' } })
+    assert.equal(res.status, 200)
+  })
+
+  it('stops brute force guessing with a lockout', async () => {
+    let status = 0
+    for (let i = 0; i < 12; i++) status = (await login('guess-' + i)).status
+    assert.equal(status, 429)
+    assert.equal((await login()).status, 429) // even the right token is refused while locked out
+  })
+})
+
+describe('admin guard with no token configured', () => {
+  it('still enforces host and origin but needs no sign-in', async () => {
+    const auth = createAdminAuth({ token: '' })
+    const guard = createAdminMiddleware({ auth })
+    const routes = createAuthRoutes({ auth })
+    const app = express()
+    app.use('/api', guard)
+    app.use('/api', express.json())
+    app.get('/api/auth/status', routes.status)
+    app.get('/api/secret', (req, res) => res.json({ ok: true }))
+    const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) })
+    const port = server.address().port
+    const get = (headers = {}) => new Promise((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port, path: '/api/secret', headers: { host: `localhost:${port}`, ...headers } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)) }).on('error', reject)
+    })
+    try {
+      assert.equal(await get(), 200)
+      assert.equal(await get({ host: 'evil.example.com' }), 403)
+      assert.equal(await get({ origin: 'http://evil.example' }), 403)
+    } finally {
+      await new Promise(resolve => server.close(resolve))
+    }
   })
 })

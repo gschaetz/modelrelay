@@ -16,7 +16,7 @@ function printHelp() {
   console.log('modelrelay')
   console.log('')
   console.log('Usage:')
-  console.log('  modelrelay [--port <port>] [--log] [--ban <model1,model2>]')
+  console.log('  modelrelay [--port <port>] [--host <address>] [--log] [--ban <model1,model2>]')
   console.log('  modelrelay onboard [--port <port>]')
   console.log('  modelrelay install --autostart')
   console.log('  modelrelay start --autostart')
@@ -442,7 +442,7 @@ async function main() {
 
   const { runServer } = await import('../lib/server.js')
 
-  await runServer(config, cliArgs.portValue || 7352, cliArgs.enableLog, cliArgs.bannedModels)
+  await runServer(config, cliArgs.portValue || 7352, cliArgs.enableLog, cliArgs.bannedModels, { host: cliArgs.hostValue })
 }
 
 main().catch(err => {

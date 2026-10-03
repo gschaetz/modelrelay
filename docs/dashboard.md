@@ -43,6 +43,10 @@ Clicking a tag chip in the table toggles that tag filter, and clicking a context
 
 Your search, sort order, filters and Min context choice are remembered in the browser across reloads. Press `/` anywhere to focus the search box and `Esc` to clear it.
 
+## Signing in
+
+If the router was started with `MODELRELAY_ADMIN_TOKEN`, the dashboard asks for the token before it loads anything, and shows a **Sign out** link next to the version. Provider keys are shown masked; **Show** and **Copy** fetch the full key on demand. See [Security](security.md).
+
 ## Request Logs
 
 Each request card shows what the caller **asked for** next to what it was routed to, for example `asked: auto-fastest+min_ctx:32000` or `asked: tag:coding`, plus the routing attempts and any failovers. Use the filter row to search by model, provider, selector or status, or to show only failovers or only errors.
