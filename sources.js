@@ -4,6 +4,7 @@
  */
 
 import { scores } from './scores.js'
+import { capLength, stripTrailingSuffixes } from './lib/text.js'
 
 export const MODEL_ID_ALIASES = {
   'cogito-2.1:671b': 'cogito-2.1:671b',
@@ -170,12 +171,16 @@ export const MODEL_CONTEXT_OVERRIDES = {
 export function resolveAliasedModelId(modelId) {
   const raw = typeof modelId === 'string' ? modelId.trim() : ''
   if (!raw) return ''
-  return MODEL_ID_ALIASES[raw] || MODEL_ID_ALIASES[raw.toLowerCase()] || raw
+  // Own-property lookups only: MODEL_ID_ALIASES['constructor'] / ['__proto__'] / ['toString'] would otherwise
+  // return inherited Object members instead of a model id.
+  const alias = (key) => (Object.prototype.hasOwnProperty.call(MODEL_ID_ALIASES, key) ? MODEL_ID_ALIASES[key] : undefined)
+  return alias(raw) || alias(raw.toLowerCase()) || raw
 }
 
 export function cleanModelDisplayLabel(label) {
   if (typeof label !== 'string') return ''
-  return label
+  // Bounded first: the trailing-anchored regexes below are quadratic on long runs of whitespace.
+  return capLength(label)
     .trim()
     .replace(/\s+/g, ' ')
     .replace(/\s+\(free\)\s*$/i, '')
@@ -186,7 +191,7 @@ export function cleanModelDisplayLabel(label) {
 export function canonicalizeModelId(modelId) {
   const resolved = resolveAliasedModelId(modelId)
   // 1. Remove known runtime suffixes like :free, :optimized:free, or :cloud
-  const base = resolved.replace(/(?::(?:free|optimized|cloud))+$/i, '');
+  const base = stripTrailingSuffixes(resolved, [':free', ':optimized', ':cloud']);
   // 2. Remove provider prefix like google/
   const unprefixed = base.includes('/') ? base.split('/').pop() : base;
   return { base, unprefixed };

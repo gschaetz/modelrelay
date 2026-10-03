@@ -61,6 +61,16 @@ The `docker-images` repo on GitLab is a separate project with its own flow and i
 5. **When you add a new place that renders model, provider, log, or request data, check it with hostile values** (quotes, `<img onerror>`, a `'` breakout) in a browser before opening the PR.
 
 ||||||| ccff78f
+## Input Safety (MANDATORY)
+
+The admin API and the proxy are unauthenticated, accept request bodies of several megabytes, and run in one single-threaded process, so any API input is hostile. These rules come from real findings (a one-request denial of service via a quadratic regex, and prototype pollution through `POST /api/config`):
+
+1. **No quadratic regexes on user input.** Do not use trailing-anchored or edge-trimming patterns such as `/x+$/`, `/^x+|x+$/` or `/\s+word\s*$/` on anything a caller can influence (endpoint names, tags, model ids, API keys, labels from discovered endpoints). Use the linear helpers in `lib/text.js` (`trimWhile`, `trimEndWhile`, `stripTrailingSuffixes`), or `capLength` before the regex. Keep behavior identical and prove it with a parity test against the old regex.
+2. **Never index a plain object with a user-supplied key unchecked.** `obj['__proto__']` resolves to `Object.prototype`, so `obj[key].x = 1` pollutes every object. Validate keys with `isSafeObjectKey`, validate provider keys with `isKnownProviderKey`, and use own-property checks (`Object.prototype.hasOwnProperty.call`) instead of truthiness on plain objects such as `sources` or `MODEL_ID_ALIASES`.
+3. **Bound input sizes.** Admin routes parse JSON with a 1 MB limit (`MODELRELAY_API_JSON_LIMIT`); validate string lengths on routes that store them.
+4. **Don't print secrets.** The CLI shows at most the last 4 characters of a key.
+5. The suites `regex replacements keep their exact behavior`, `adversarial input cannot stall the router` and `prototype pollution guards` enforce this. Extend them when you add a new input path.
+
 ## Git Commits
 
 When making a commit on behalf of the user, NEVER prefix your commit message with `fix:`, `feature:`, `feat:`, `chore:`, or any other prefix. 

@@ -324,7 +324,7 @@ async function main() {
           config.apiKeys[provider] = existing
         }
         saveConfig(config)
-        console.log(chalk.green(`✔ Removed key [${idx}] ${removed.slice(0, 4)}... from ${provider} (${existing.length} remaining)`))
+        console.log(chalk.green(`✔ Removed key [${idx}] from ${provider} (${existing.length} remaining)`))
       } else {
         const idx2 = existing.indexOf(keyOrIndex)
         if (idx2 !== -1) {
@@ -337,7 +337,7 @@ async function main() {
             config.apiKeys[provider] = existing
           }
           saveConfig(config)
-          console.log(chalk.green(`✔ Removed key ${keyOrIndex.slice(0, 4)}... from ${provider} (${existing.length} remaining)`))
+          console.log(chalk.green(`✔ Removed the key from ${provider} (${existing.length} remaining)`))
         } else {
           console.error(`Key not found in ${provider} pool: ${keyOrIndex}`)
           process.exit(1)
@@ -413,7 +413,7 @@ async function main() {
 
       for (let i = 0; i < pool.length; i++) {
         const key = pool[i]
-        const masked = key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : `${key.slice(0, 2)}***`
+        const masked = key.length > 8 ? `…${key.slice(-4)}` : '***'
         const liveAcct = live?.accounts?.find(a => a.index === i)
         const requests = liveAcct?.requests ?? 0
         const isRateLimited = liveAcct?.rateLimited ?? false
