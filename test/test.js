@@ -21,6 +21,8 @@ import {
   buildModelGroups,
   filterModelsByRequested,
   getEffectiveContext,
+  MAX_REQUESTED_MODEL_LENGTH,
+  normalizeRequestedModel,
   isCompleteSseStream,
   isProviderRequestRejectionError,
   isRateLimitShapedError,
@@ -3455,5 +3457,51 @@ describe('dashboard search and filters', () => {
     assert.equal(S.parseUiState(JSON.stringify({ v: 1, sort: { col: 'bogus', dir: 'asc' } })).sort, null)
     assert.deepEqual(S.parseUiState(JSON.stringify({ v: 1, tags: [1, 'ok'], minCtx: -5 })).tags, ['ok'])
     assert.equal(S.parseUiState(JSON.stringify({ v: 1, minCtx: -5 })).minCtx, null)
+  })
+})
+
+
+describe('dashboard HTML escaping', () => {
+  // Load the dashboard's real escapeHtml (it lives in the page's inline script) and exercise it.
+  const html = readFileSync(join(ROOT, 'public/index.html'), 'utf8')
+  const source = html.match(/function escapeHtml\(value\) \{[\s\S]*?\n    \}/)
+  const escapeHtml = new Function(`${source[0]}; return escapeHtml`)()
+
+  it('escapes quotes so values cannot break out of an attribute', () => {
+    const hostile = 'x" onmouseover="alert(1)" y=\'z'
+    const escaped = escapeHtml(hostile)
+    assert.equal(escaped.includes('"'), false)
+    assert.equal(escaped.includes("'"), false)
+    assert.equal(escaped, 'x&quot; onmouseover=&quot;alert(1)&quot; y=&#39;z')
+  })
+
+  it('still escapes markup and ampersands, and handles non-strings', () => {
+    assert.equal(escapeHtml('<b>&</b>'), '&lt;b&gt;&amp;&lt;/b&gt;')
+    assert.equal(escapeHtml(null), 'null')
+    assert.equal(escapeHtml(42), '42')
+  })
+
+  it('escapes & first so entities are not double-decoded into markup', () => {
+    assert.equal(escapeHtml('&quot;'), '&amp;quot;')
+  })
+
+  it('renders numeric data attributes through Number() so they cannot carry markup', () => {
+    assert.ok(html.includes('data-ctx="${Number(info.tokens) || 0}"'))
+    assert.equal(html.includes('data-ctx="${info.tokens}"'), false)
+  })
+})
+
+describe('normalizeRequestedModel', () => {
+  it('keeps normal selectors and caps hostile or huge input', () => {
+    assert.equal(normalizeRequestedModel('auto-fastest+min_ctx:32000'), 'auto-fastest+min_ctx:32000')
+    assert.equal(normalizeRequestedModel('x'.repeat(5000)).length, MAX_REQUESTED_MODEL_LENGTH)
+  })
+
+  it('returns null for missing or non-string models', () => {
+    assert.equal(normalizeRequestedModel(undefined), null)
+    assert.equal(normalizeRequestedModel(null), null)
+    assert.equal(normalizeRequestedModel(''), null)
+    assert.equal(normalizeRequestedModel({ model: 'x' }), null)
+    assert.equal(normalizeRequestedModel(42), null)
   })
 })

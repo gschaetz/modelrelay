@@ -3468,9 +3468,9 @@
       const hint = `Click to show models with at least ${fmt(ModelRelaySearch.presetForTokens(info.tokens) || info.tokens)} of context`;
       if (info.capped) {
         const title = `Reported ${fmt(info.reportedTokens)}, capped at ${fmt(info.quotaTokens)} by the observed rate-limit quota. min_ctx routing uses ${fmt(info.tokens)}. ${hint}.`;
-        return `<div class="ctx-value ctx-capped" data-ctx="${info.tokens}" title="${escapeHtml(title)}">${fmt(info.tokens)} ⚠</div><div class="ctx-sub">of ${fmt(info.reportedTokens)} reported</div>`;
+        return `<div class="ctx-value ctx-capped" data-ctx="${Number(info.tokens) || 0}" title="${escapeHtml(title)}">${fmt(info.tokens)} ⚠</div><div class="ctx-sub">of ${fmt(info.reportedTokens)} reported</div>`;
       }
-      return `<div class="ctx-value" data-ctx="${info.tokens}" title="${escapeHtml(hint)}">${fmt(info.tokens)}</div>`;
+      return `<div class="ctx-value" data-ctx="${Number(info.tokens) || 0}" title="${escapeHtml(hint)}">${fmt(info.tokens)}</div>`;
     }
 
     function renderReliabilityCell(m) {
@@ -5565,11 +5565,15 @@
       loadLogs(true);
     }
 
+    // Safe for both text and quoted-attribute contexts: quotes must be escaped too, otherwise a value
+    // containing " breaks out of title="..." / data-x="..." and can inject attributes such as onmouseover.
     function escapeHtml(value) {
       return String(value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function stableStringify(value) {
