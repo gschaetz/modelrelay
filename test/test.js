@@ -3505,3 +3505,81 @@ describe('normalizeRequestedModel', () => {
     assert.equal(normalizeRequestedModel(42), null)
   })
 })
+
+
+describe('dashboard inline handler and markup safety', () => {
+  const html = readFileSync(join(ROOT, 'public/index.html'), 'utf8')
+  const fnSource = (name) => new Function(`${html.match(new RegExp(`function ${name}\\(value\\) \\{[\\s\\S]*?\\n    \\}`))[0]}; return ${name}`)()
+  const escapeHtml = fnSource('escapeHtml')
+  const jsArg = new Function('escapeHtml', `${html.match(/function jsArg\(value\) \{[\s\S]*?\n    \}/)[0]}; return jsArg`)(escapeHtml)
+  const decodeEntities = (text) => text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+
+  // What the browser does with onclick="fn(...)": decode the attribute, then run it as JS.
+  const roundTrip = (value) => {
+    let received
+    const attr = `capture(${jsArg(value)})`
+    new Function('capture', decodeEntities(attr))((v) => { received = v })
+    return received
+  }
+
+  it('jsArg hands the exact original string to the handler, whatever it contains', () => {
+    const hostile = [
+      "it's'),window.__pwn=2,('",
+      'evil"><img src=x onerror=window.__pwn=1>',
+      'q" data-pwn="1',
+      '</script><script>alert(1)</script>',
+      'back\\slash and \\u0041 and "quotes" and \'single\'',
+      'line1\nline2\r\n\ttab',
+      '&quot; &amp; &#39; &lt;b&gt;',
+      'unicode \u2028 \u2029 \u00e9 \ud83d\ude80',
+      '',
+      'plain-model-id',
+    ]
+    for (const value of hostile) assert.equal(roundTrip(value), value, `round trip failed for ${JSON.stringify(value)}`)
+    assert.equal(roundTrip(null), '')
+    assert.equal(roundTrip(undefined), '')
+    assert.equal(roundTrip(42), '42')
+  })
+
+  it('jsArg output contains no raw quote that could end the attribute', () => {
+    const out = jsArg('x" onmouseover="alert(1)\' y')
+    assert.equal(out.includes('"'), false)
+    assert.equal(out.includes("'"), false)
+  })
+
+  const handlerAttrs = [...html.matchAll(/\bon[a-z]+\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)')/g)]
+    .map(m => ({ quote: m[1] !== undefined ? '"' : "'", body: m[1] !== undefined ? m[1] : m[2] }))
+    .filter(a => a.body.includes('${'))
+
+  it('finds the inline handlers with interpolation (guards the scan itself)', () => {
+    assert.ok(handlerAttrs.length >= 25, `expected at least 25, found ${handlerAttrs.length}`)
+  })
+
+  it('every handler interpolation goes through jsArg or is a plain loop index', () => {
+    for (const { body } of handlerAttrs) {
+      const exprs = [...body.matchAll(/\$\{((?:[^{}]|\{[^{}]*\})*)\}/g)].map(m => m[1].trim())
+      for (const expr of exprs) {
+        assert.ok(/^jsArg\(/.test(expr) || /^(i|idx)$/.test(expr), `unsafe interpolation in handler: ${body.slice(0, 120)}`)
+      }
+    }
+  })
+
+  it('no handler wraps an interpolation in quotes, embeds JSON, or uses a single-quoted attribute', () => {
+    for (const { quote, body } of handlerAttrs) {
+      assert.equal(quote, '"', `single-quoted handler: ${body.slice(0, 80)}`)
+      assert.equal(/'\$\{/.test(body), false, `quote-wrapped interpolation: ${body.slice(0, 80)}`)
+      assert.equal(body.includes('JSON.stringify'), false, `JSON in handler: ${body.slice(0, 80)}`)
+    }
+  })
+
+  it('opens drawers by row key instead of embedding the whole model in onclick', () => {
+    assert.equal(html.includes('openDrawer(${JSON.stringify'), false)
+    assert.ok(html.includes('function openDrawerByRow(rowKey)'))
+  })
+
+  it('does not interpolate untrusted fields into markup unescaped', () => {
+    for (const raw of ['${p.key}', '${m.label}</div>', '${p.name}</h3>', '${l.model}</span>', '<span>${l.provider}</span>', '${m.modelId}</div>', 'href="${p.signupUrl}"']) {
+      assert.equal(html.includes(raw), false, `raw interpolation present: ${raw}`)
+    }
+  })
+})

@@ -34,6 +34,16 @@ User-facing reference documentation lives in `docs/` (one page per topic) and th
 | Config file, env vars, OpenAI-compatible endpoints | `docs/configuration.md` |
 | Update and local-testing troubleshooting | `docs/troubleshooting.md` |
 
+## Dashboard Markup Safety (MANDATORY)
+
+`public/index.html` builds most of its UI with template strings assigned to `innerHTML`, and much of the data it shows is untrusted: model ids and labels discovered from custom endpoints, provider/endpoint names set through the settings API, and request fields recorded in the logs (the router API has no auth). Treat all of it as hostile:
+
+1. **Text and attribute values**: wrap every interpolated value in `escapeHtml(...)` (it escapes `& < > " '`, so it is safe in text and in quoted attributes), including `id="..."`, `title="..."`, `value="..."`, `data-*` and `href`.
+2. **Inline event handlers**: never write `onclick="fn('${value}')"`, never embed JSON in a handler, and never use a single-quoted handler attribute. Pass arguments with `jsArg(...)`: `onclick="fn(${jsArg(value)})"`. Loop indexes may be interpolated directly. Better still, pass a stable key and look the object up in the handler (see `openDrawerByRow`), or use a `data-*` attribute with a delegated listener.
+3. **Don't double-escape**: `escapeHtml` is for HTML, `jsArg` already escapes for the attribute, and `textContent` needs neither.
+4. **The tests enforce this** (`dashboard inline handler and markup safety`, `dashboard HTML escaping`). If one fails, fix the markup instead of loosening the test.
+5. **When you add a new place that renders model, provider, log, or request data, check it with hostile values** (quotes, `<img onerror>`, a `'` breakout) in a browser before opening the PR.
+
 ## Git Commits
 
 When making a commit on behalf of the user, NEVER prefix your commit message with `fix:`, `feature:`, `feat:`, `chore:`, or any other prefix. 

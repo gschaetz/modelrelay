@@ -2485,7 +2485,7 @@
 
         if (pillEl) {
           if (meta.updateAvailable && meta.latestVersion) {
-            pillEl.innerHTML = `<span class="update-badge" onclick="startManualUpdate('${meta.latestVersion}')">✨ Update to v${meta.latestVersion}</span>`;
+            pillEl.innerHTML = `<span class="update-badge" onclick="startManualUpdate(${jsArg(meta.latestVersion)})">✨ Update to v${escapeHtml(meta.latestVersion)}</span>`;
             pillEl.style.display = 'inline-flex';
             pillEl.title = `Current: v${meta.version}`;
           } else {
@@ -3348,15 +3348,15 @@
       tr.innerHTML = `
           <td>
             <div style="display:flex; flex-direction:column; gap:2px; align-items:center;">
-              <div class="expand-btn" onclick='openDrawer(${JSON.stringify(m).replace(/'/g, "&apos;")})'>
+              <div class="expand-btn" onclick="openDrawerByRow(${jsArg(getModelRowKey(m))})">
                 <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
               </div>
-              <div class="pin-row-btn ${isPinnedRow ? 'pinned' : ''}" onclick="pinModel('${isPinnedRow ? '' : m.modelId}', '${m.providerKey}')" title="${isPinnedRow ? 'Unpin model' : 'Pin model'}">📌</div>
+              <div class="pin-row-btn ${isPinnedRow ? 'pinned' : ''}" onclick="pinModel(${jsArg(isPinnedRow ? '' : m.modelId)}, ${jsArg(m.providerKey)})" title="${isPinnedRow ? 'Unpin model' : 'Pin model'}">📌</div>
             </div>
           </td>
-          <td style="cursor:pointer;" onclick='openDrawer(${JSON.stringify(m).replace(/'/g, "&apos;")})'>
-            <div style="font-weight: 600;">${m.status === 'banned' ? '🚫 ' : (m.status === 'excluded' ? '⛔ ' : '')}${m.label}</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${m.providerKey}</div>
+          <td style="cursor:pointer;" onclick="openDrawerByRow(${jsArg(getModelRowKey(m))})">
+            <div style="font-weight: 600;">${m.status === 'banned' ? '🚫 ' : (m.status === 'excluded' ? '⛔ ' : '')}${escapeHtml(m.label)}</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(m.providerKey)}</div>
             <div class="model-tag-row">${renderModelTagChips(m.tags, false, true)}</div>
             <div class="model-inline-metrics">${renderInlineMetrics(m)}</div>
           </td>
@@ -3447,7 +3447,7 @@
         ? '<span style="font-size:0.75rem;color:var(--text-muted);">No tags yet</span>'
         : '';
       return normalized.map(tag => editable
-        ? `<button class="model-tag" onclick="removeModelTag('${escapeHtml(tag)}')" title="Remove ${escapeHtml(tag)}">${escapeHtml(tag)} ×</button>`
+        ? `<button class="model-tag" onclick="removeModelTag(${jsArg(tag)})" title="Remove ${escapeHtml(tag)}">${escapeHtml(tag)} ×</button>`
         : (linkable
           ? `<span class="model-tag tag-link ${tagFilter.includes(tag) ? 'active' : ''}" data-tag="${escapeHtml(tag)}" title="Filter by ${escapeHtml(tag)}">${escapeHtml(tag)}</span>`
           : `<span class="model-tag">${escapeHtml(tag)}</span>`)).join('');
@@ -4207,21 +4207,21 @@
             : 'Set the upstream base URL and exact model ID for this provider. If base URL is blank, modelrelay uses https://ollama.com/v1 and expects an OLLAMA_API_KEY.';
           const openAiCompatibleFieldsHtml = showsBaseUrlFields ? `
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-              <input type="text" id="base-url-${p.key}" value="${escapeHtml(p.baseUrl || '')}" placeholder="${baseUrlPlaceholder}" style="flex:1;" onblur="updateProviderBaseUrl('${p.key}')">
+              <input type="text" id="base-url-${escapeHtml(p.key)}" value="${escapeHtml(p.baseUrl || '')}" placeholder="${baseUrlPlaceholder}" style="flex:1;" onblur="updateProviderBaseUrl(${jsArg(p.key)})">
             </div>
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-              <input type="text" id="model-id-${p.key}" value="${escapeHtml(p.modelId || '')}" placeholder="upstream-model-id (optional if discovery is on)" style="flex:1;" onblur="updateProviderModelId('${p.key}')">
+              <input type="text" id="model-id-${escapeHtml(p.key)}" value="${escapeHtml(p.modelId || '')}" placeholder="upstream-model-id (optional if discovery is on)" style="flex:1;" onblur="updateProviderModelId(${jsArg(p.key)})">
             </div>
             <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">${baseUrlNote}</div>
             ${p.isOpenAICompatibleInstance ? `
               <div style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                  <input type="checkbox" id="discover-${p.key}" ${p.discoverModels !== false ? 'checked' : ''} onchange="updateProviderDiscoverModels('${p.key}')">
+                  <input type="checkbox" id="discover-${escapeHtml(p.key)}" ${p.discoverModels !== false ? 'checked' : ''} onchange="updateProviderDiscoverModels(${jsArg(p.key)})">
                   Discover models from <code>/v1/models</code>
                 </label>
               </div>
               <div style="margin-top:10px; display:flex; justify-content:flex-end;">
-                <button onclick="removeOpenAICompatibleEndpoint('${escapeHtml(p.openAICompatibleInstanceId)}', ${JSON.stringify(p.name)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Remove Endpoint</button>
+                <button onclick="removeOpenAICompatibleEndpoint(${jsArg(p.openAICompatibleInstanceId)}, ${jsArg(p.name)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Remove Endpoint</button>
               </div>
             ` : ''}
           ` : '';
@@ -4229,7 +4229,7 @@
           const optionalBearerAuthHtml = (tokenOptional && p.hasKey) ? `
             <div style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                <input type="checkbox" id="bearer-auth-${p.key}" ${p.useBearerAuth !== false ? 'checked' : ''} onchange="updateProviderBearerAuth('${p.key}')">
+                <input type="checkbox" id="bearer-auth-${escapeHtml(p.key)}" ${p.useBearerAuth !== false ? 'checked' : ''} onchange="updateProviderBearerAuth(${jsArg(p.key)})">
                 Attach API Key as Bearer
               </label>
             </div>
@@ -4302,8 +4302,8 @@
               <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                   <span style="background:${kiroStatusBg}; color:${kiroStatusColor}; border-radius:999px; padding:2px 10px; font-size:0.75rem; font-weight:600;">${kiroStatusOk ? '✅' : '⚠️'} ${escapeHtml(kiroStatusText)}</span>
-                  <h3 style="margin:0; font-size:1rem;">${p.name}</h3>
-                  <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick='refreshProviderModels(${JSON.stringify(p.key)}, ${JSON.stringify(p.name)})' title="Refresh provider models">
+                  <h3 style="margin:0; font-size:1rem;">${escapeHtml(p.name)}</h3>
+                  <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick="refreshProviderModels(${jsArg(p.key)}, ${jsArg(p.name)})" title="Refresh provider models">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                       <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                       <polyline points="21 3 21 9 15 9"></polyline>
@@ -4313,7 +4313,7 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:10px;">
                   <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                    <input type="checkbox" id="enable-${p.key}" ${p.enabled ? 'checked' : ''} onchange="updateProvider('${p.key}')">
+                    <input type="checkbox" id="enable-${escapeHtml(p.key)}" ${p.enabled ? 'checked' : ''} onchange="updateProvider(${jsArg(p.key)})">
                     Enabled
                   </label>
                 </div>
@@ -4327,11 +4327,11 @@
                 <button onclick="autoImportKiroToken()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:8px; font-size:0.78rem; font-weight:600;">Auto-import from AWS cache</button>
               </div>
               <div class="form-group" style="display:flex; gap:8px; align-items:center;">
-                <input type="password" id="key-${p.key}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (Refresh Token Configured)' : 'Paste Kiro refresh token...'}" style="flex:1; background:var(--input-bg); color:var(--text);" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveKiroRefreshToken();}">
-                <button onclick="toggleProviderKeyVisibility('${p.key}', this)" title="Show or hide token" aria-label="Show or hide token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
-                ${p.hasKey ? `<button onclick="copyProviderKey('${p.key}', this)" title="Copy token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
+                <input type="password" id="key-${escapeHtml(p.key)}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (Refresh Token Configured)' : 'Paste Kiro refresh token...'}" style="flex:1; background:var(--input-bg); color:var(--text);" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveKiroRefreshToken();}">
+                <button onclick="toggleProviderKeyVisibility(${jsArg(p.key)}, this)" title="Show or hide token" aria-label="Show or hide token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
+                ${p.hasKey ? `<button onclick="copyProviderKey(${jsArg(p.key)}, this)" title="Copy token" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
                 <button onclick="saveKiroRefreshToken()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Save Token</button>
-                ${p.hasKey ? `<button onclick="deleteProviderKey('${p.key}')" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Token</button>` : ''}
+                ${p.hasKey ? `<button onclick="deleteProviderKey(${jsArg(p.key)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Token</button>` : ''}
               </div>
               <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">ModelRelay stores the resulting Kiro refresh token locally in your ModelRelay config. Auto-import/manual token are still useful if Kiro is already signed in on this machine.</div>
               ${kiroDeviceAuthHtml}
@@ -4339,7 +4339,7 @@
               ${kiroMessageHtml}
               <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:12px;">
                 <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Ping interval (min):</span>
-                <input type="number" id="ping-interval-${p.key}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval('${p.key}')">
+                <input type="number" id="ping-interval-${escapeHtml(p.key)}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval(${jsArg(p.key)})">
                 <span style="font-size:0.75rem; color:var(--text-muted);">(default: 30)</span>
               </div>
               ${providerErrorHtml}
@@ -4352,32 +4352,32 @@
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
               <div style="display:flex; align-items:center; gap:10px;">
                 <span style="background:${statusBg}; color:${statusColor}; border-radius:999px; padding:2px 10px; font-size:0.75rem; font-weight:600;">${statusIcon} ${statusText}</span>
-                <h3 style="margin:0; font-size:1rem;">${p.name}</h3>
-                <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick='refreshProviderModels(${JSON.stringify(p.key)}, ${JSON.stringify(p.name)})' title="Refresh provider models">
+                <h3 style="margin:0; font-size:1rem;">${escapeHtml(p.name)}</h3>
+                <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick="refreshProviderModels(${jsArg(p.key)}, ${jsArg(p.name)})" title="Refresh provider models">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                     <polyline points="21 3 21 9 15 9"></polyline>
                   </svg>
                   <span>${isRefreshing ? 'Refreshing…' : `${modelCount} model${modelCount !== 1 ? 's' : ''}`}</span>
                 </button>
-                ${p.signupUrl ? `<a href="${p.signupUrl}" target="_blank" rel="noopener noreferrer" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:600;">Get API key</a>` : ''}
+                ${p.signupUrl ? `<a href="${escapeHtml(p.signupUrl)}" target="_blank" rel="noopener noreferrer" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:600;">Get API key</a>` : ''}
               </div>
               <div style="display:flex; align-items:center; gap:10px;">
                 <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
-                  <input type="checkbox" id="enable-${p.key}" ${p.enabled ? 'checked' : ''} onchange="updateProvider('${p.key}')">
+                  <input type="checkbox" id="enable-${escapeHtml(p.key)}" ${p.enabled ? 'checked' : ''} onchange="updateProvider(${jsArg(p.key)})">
                   Enabled
                 </label>
               </div>
             </div>
             <div class="form-group" style="display:flex; gap:8px; align-items:center;">
-              <input type="password" id="key-${p.key}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (' + (tokenOptional ? 'API Key Configured' : 'Key Configured') + ')' : (tokenOptional ? 'Enter API Key (optional)...' : 'Enter API Key...')}" style="flex:1; background:var(--input-bg); color:var(--text);" onblur="updateProviderKey('${p.key}')">
-              <button onclick="toggleProviderKeyVisibility('${p.key}', this)" title="Show or hide API key" aria-label="Show or hide API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
-              ${p.hasKey ? `<button onclick="copyProviderKey('${p.key}', this)" title="Copy API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
-              ${p.hasKey ? `<button onclick="deleteProviderKey('${p.key}')" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Key</button>` : ''}
+              <input type="password" id="key-${escapeHtml(p.key)}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (' + (tokenOptional ? 'API Key Configured' : 'Key Configured') + ')' : (tokenOptional ? 'Enter API Key (optional)...' : 'Enter API Key...')}" style="flex:1; background:var(--input-bg); color:var(--text);" onblur="updateProviderKey(${jsArg(p.key)})">
+              <button onclick="toggleProviderKeyVisibility(${jsArg(p.key)}, this)" title="Show or hide API key" aria-label="Show or hide API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
+              ${p.hasKey ? `<button onclick="copyProviderKey(${jsArg(p.key)}, this)" title="Copy API key" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.78rem; white-space:nowrap;">Copy</button>` : ''}
+              ${p.hasKey ? `<button onclick="deleteProviderKey(${jsArg(p.key)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Key</button>` : ''}
             </div>
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
               <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Ping interval (min):</span>
-              <input type="number" id="ping-interval-${p.key}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval('${p.key}')">
+              <input type="number" id="ping-interval-${escapeHtml(p.key)}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval(${jsArg(p.key)})">
               <span style="font-size:0.75rem; color:var(--text-muted);">(default: 30)</span>
             </div>
             ${(Array.isArray(p.apiKeyPool) && p.apiKeyPool.length > 0) ? `
@@ -4391,18 +4391,18 @@
                   <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border:1px solid var(--border-subtle); border-radius:6px; font-size:0.78rem;">
                     <span style="font-weight:700; color:var(--text-muted); min-width:20px;">[${i}]</span>
                     <span style="font-family:monospace; color:var(--text); flex:1;">${escapeHtml(acct.masked)}</span>
-                    <span id="acct-status-${p.key}-${i}" style="font-size:0.7rem;"></span>
-                    <button onclick="removeAccountKey('${p.key}', ${i})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600;">Remove</button>
+                    <span id="acct-status-${escapeHtml(p.key)}-${i}" style="font-size:0.7rem;"></span>
+                    <button onclick="removeAccountKey(${jsArg(p.key)}, ${i})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600;">Remove</button>
                   </div>
                 `).join('')}
               </div>
               <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                <input type="password" id="new-key-${p.key}" placeholder="Add new account key..." style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem; background:var(--input-bg); color:var(--text);">
-                <button onclick="addAccountKey('${p.key}')" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Add Account</button>
+                <input type="password" id="new-key-${escapeHtml(p.key)}" placeholder="Add new account key..." style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem; background:var(--input-bg); color:var(--text);">
+                <button onclick="addAccountKey(${jsArg(p.key)})" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Add Account</button>
               </div>
               <div style="display:flex; gap:8px; align-items:center;">
                 <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Max turns per account:</span>
-                <input type="number" id="maxturns-${p.key}" min="0" step="1" value="${p.maxTurns || 0}" style="width:70px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;" onchange="updateProviderMaxTurns('${p.key}')">
+                <input type="number" id="maxturns-${escapeHtml(p.key)}" min="0" step="1" value="${p.maxTurns || 0}" style="width:70px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;" onchange="updateProviderMaxTurns(${jsArg(p.key)})">
                 <span style="font-size:0.72rem; color:var(--text-muted);">0 = unlimited</span>
               </div>
             </div>
@@ -5474,16 +5474,16 @@
           let failoverHtml = '';
           if (attempts.length > 0) {
             const attemptRows = attempts.map((a, idx) => {
-              const code = a && a.status ? String(a.status) : 'unknown';
-              const isOk = code === '200';
+              const code = escapeHtml(a && a.status ? String(a.status) : 'unknown');
+              const isOk = code === '200'; // (escaped digits are unchanged)
               const isRetryable = !!(a && a.retryable);
               const chipBg = isOk ? 'var(--status-success-bg)' : (isRetryable ? 'var(--status-warning-bg)' : 'var(--status-error-bg)');
               const chipFg = isOk ? 'var(--status-success-text)' : (isRetryable ? 'var(--status-warning-text)' : 'var(--status-error-text)');
-              const model = a && a.model ? a.model : '(unknown model)';
-              const provider = a && a.provider ? a.provider : '(unknown provider)';
+              const model = escapeHtml(a && a.model ? a.model : '(unknown model)');
+              const provider = escapeHtml(a && a.provider ? a.provider : '(unknown provider)');
               const duration = a && a.duration != null ? `${a.duration}ms` : 'n/a';
               const err = a && a.error
-                ? `<div style="margin-top:4px; color: var(--text-muted); font-size:0.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${String(a.error).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`
+                ? `<div style="margin-top:4px; color: var(--text-muted); font-size:0.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(String(a.error))}</div>`
                 : '';
               return `
                 <div style="padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--chat-bg);">
@@ -5513,12 +5513,12 @@
           const isExpanded = expandedCards.has(cardId) ? ' expanded' : '';
           return `
             <div class="log-card${isExpanded}" id="${cardId}">
-              <div class="log-card-header" onclick="toggleLogCard('${cardId}')">
+              <div class="log-card-header" onclick="toggleLogCard(${jsArg(cardId)})">
                 <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
                   <span class="log-chevron">▶</span>
                   <div style="min-width:0;">
                     <div style="display: flex; align-items: center; gap: 10px; flex-wrap:wrap;">
-                      <span style="font-weight: 600; font-size: 0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${l.model}</span>
+                      <span style="font-weight: 600; font-size: 0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(l.model)}</span>
                       ${requestedModelChip(l)}
                       ${resolvedModelChip}
                       ${statusBadge}
@@ -5526,7 +5526,7 @@
                     <div style="font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 10px; flex-wrap: wrap; margin-top:2px;">
                       <span>${timeStr}</span>
                       <span>•</span>
-                      <span>${l.provider}</span>
+                      <span>${escapeHtml(l.provider)}</span>
                       ${hadFailover ? `<span>•</span><span style="color: var(--warning); font-weight: 600;">🔁 ${retryCount} failover${retryCount > 1 ? 's' : ''}</span>` : ''}
                       ${l.duration ? `<span>•</span><span>${l.duration}ms total</span>` : ''}
                       ${l.ttft != null && l.ttft !== l.duration ? `<span>•</span><span style="color: var(--accent);">⚡ ${l.ttft}ms TTFT</span>` : ''}
@@ -5543,7 +5543,7 @@
                 ${failoverHtml}
                 ${errorHtml}
                 <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); display:flex; justify-content:flex-end;">
-                  <button onclick="event.stopPropagation(); toggleBan('${l.model}', '${logModelStatus}')" style="background: ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-bg)'}; border: 1px solid ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-border)'}; padding: 6px 14px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; color: ${isBanned ? 'var(--status-neutral-text)' : 'var(--status-error-text)'}; cursor: pointer;">${isBanned ? '✓ Unban Model' : '🚫 Ban Model'}</button>
+                  <button onclick="event.stopPropagation(); toggleBan(${jsArg(l.model)}, ${jsArg(logModelStatus)})" style="background: ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-bg)'}; border: 1px solid ${isBanned ? 'var(--border-subtle)' : 'var(--status-error-border)'}; padding: 6px 14px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; color: ${isBanned ? 'var(--status-neutral-text)' : 'var(--status-error-text)'}; cursor: pointer;">${isBanned ? '✓ Unban Model' : '🚫 Ban Model'}</button>
                 </div>
               </div>
             </div>
@@ -5574,6 +5574,13 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    // A JavaScript string literal that is safe inside a double-quoted HTML event-handler attribute:
+    // onclick="fn(${jsArg(value)})". JSON.stringify makes it a valid JS string whatever the characters,
+    // and escapeHtml makes it safe in the attribute; the browser decodes it back before the JS runs.
+    function jsArg(value) {
+      return escapeHtml(JSON.stringify(String(value == null ? '' : value)));
     }
 
     function stableStringify(value) {
@@ -5743,6 +5750,12 @@
       document.getElementById(id)?.classList.toggle('expanded');
     }
 
+    // Opens the drawer for a table row by its stable row key (provider::modelId), looked up in the current data.
+    function openDrawerByRow(rowKey) {
+      const model = allModels.find(x => getModelRowKey(x) === rowKey);
+      if (model) openDrawer(model);
+    }
+
     function openDrawer(m) {
       openDrawerModelId = m.modelId;
       document.getElementById('drawer-title').textContent = m.label;
@@ -5840,16 +5853,16 @@
         <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
           <div style="min-width:0; flex:1;">
             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Model ID</div>
-            <div style="font-family: monospace; background: var(--surface-alt); padding: 12px; border-radius: 8px; font-size: 0.875rem; word-break:break-all;">${m.modelId}</div>
+            <div style="font-family: monospace; background: var(--surface-alt); padding: 12px; border-radius: 8px; font-size: 0.875rem; word-break:break-all;">${escapeHtml(m.modelId)}</div>
           </div>
           <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
-            <button onclick="pinModel('${isModelPinned ? '' : m.modelId}', '${m.providerKey}')" style="background: ${isModelPinned ? 'var(--status-info-bg)' : 'var(--surface-alt)'}; border: ${isModelPinned ? '1px solid var(--status-info-border)' : '1px solid transparent'}; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${isModelPinned ? 'var(--status-info-text)' : 'var(--text)'}; cursor: pointer;">
+            <button onclick="pinModel(${jsArg(isModelPinned ? '' : m.modelId)}, ${jsArg(m.providerKey)})" style="background: ${isModelPinned ? 'var(--status-info-bg)' : 'var(--surface-alt)'}; border: ${isModelPinned ? '1px solid var(--status-info-border)' : '1px solid transparent'}; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${isModelPinned ? 'var(--status-info-text)' : 'var(--text)'}; cursor: pointer;">
               ${isModelPinned ? '📌 Unpin Model' : '📌 Pin Model'}
             </button>
-            <button onclick="pingModelNow('${m.modelId}')" style="background: var(--status-info-bg); border: 1px solid var(--status-info-border); padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: var(--status-info-text); cursor: pointer;">
+            <button onclick="pingModelNow(${jsArg(m.modelId)})" style="background: var(--status-info-bg); border: 1px solid var(--status-info-border); padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: var(--status-info-text); cursor: pointer;">
               📶 Ping Now
             </button>
-            <button onclick="toggleBan('${m.modelId}', '${m.status}')" style="background: ${m.status === 'banned' ? 'var(--text-muted)' : 'var(--status-error-bg)'}; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${m.status === 'banned' ? 'var(--input-bg)' : 'var(--status-error-text)'}; cursor: pointer;">
+            <button onclick="toggleBan(${jsArg(m.modelId)}, ${jsArg(m.status)})" style="background: ${m.status === 'banned' ? 'var(--text-muted)' : 'var(--status-error-bg)'}; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; color: ${m.status === 'banned' ? 'var(--input-bg)' : 'var(--status-error-text)'}; cursor: pointer;">
               ${m.status === 'banned' ? 'Unban Model' : 'Ban Model'}
             </button>
           </div>
