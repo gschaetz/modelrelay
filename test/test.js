@@ -20,6 +20,7 @@ import {
   DEFAULT_QOS_LATENCY_TARGET_MS,
   buildModelGroups,
   filterModelsByRequested,
+  isCompleteSseStream,
   isProviderRequestRejectionError,
   isRateLimitShapedError,
   isRetryableProxyStatus,
@@ -33,7 +34,7 @@ import {
   VERDICT_ORDER,
 } from '../lib/utils.js'
 import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
-import { buildOpenClawProviderConfig } from '../lib/onboard.js'
+import { OPENCLAW_ROUTING_PRESETS, applyOpenClawConfig, buildOpenClawProviderConfig } from '../lib/onboard.js'
 import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { buildOpenRouterQualityIndex, fitLinearRegression, qualityLookupKeys, resolveModelQuality } from '../lib/model-quality.js'
 import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags, normalizeTag, normalizeTags, setModelTags } from '../lib/tags.js'
@@ -2380,6 +2381,36 @@ describe('onboard integrations', () => {
     assert.equal(provider.apiKey, 'no-key')
     assert.deepEqual(provider.models, [{ id: 'auto-fastest', name: 'Auto Fastest' }])
   })
+
+  it('adds routing presets only when asked, with contextWindow matching min_ctx', () => {
+    const withPresets = buildOpenClawProviderConfig(7352, { presets: true })
+    assert.deepEqual(withPresets.models.map(m => m.id), ['auto-fastest', ...OPENCLAW_ROUTING_PRESETS.map(p => p.id)])
+    const coding = withPresets.models.find(m => m.id === 'tag:coding+min_ctx:64k')
+    assert.equal(coding.contextWindow, 65536)
+    assert.equal(buildOpenClawProviderConfig(7352).models.length, 1)
+  })
+
+  it('applyOpenClawConfig keeps auto-fastest primary and allowlists presets', () => {
+    const config = applyOpenClawConfig({}, 7352, { presets: true })
+    assert.equal(config.agents.defaults.model.primary, 'modelrelay/auto-fastest')
+    for (const preset of OPENCLAW_ROUTING_PRESETS) assert.ok(config.agents.defaults.models[`modelrelay/${preset.id}`])
+    assert.ok(config.agents.defaults.models['modelrelay/auto-fastest'])
+  })
+
+  it('applyOpenClawConfig preserves hand-added selectors and unrelated config on re-run', () => {
+    const existing = {
+      theme: 'dark',
+      models: { providers: { other: { baseUrl: 'x' }, modelrelay: { models: [{ id: 'auto-fastest', name: 'old' }, { id: 'tag:reasoning+min_ctx:32k', name: 'Reasoning' }] } } },
+      agents: { defaults: { models: { 'modelrelay/tag:reasoning+min_ctx:32k': {} } } },
+    }
+    const config = applyOpenClawConfig(existing, 7400)
+    assert.equal(config.theme, 'dark')
+    assert.deepEqual(config.models.providers.other, { baseUrl: 'x' })
+    assert.equal(config.models.providers.modelrelay.baseUrl, 'http://127.0.0.1:7400/v1')
+    assert.deepEqual(config.models.providers.modelrelay.models.map(m => m.id), ['auto-fastest', 'tag:reasoning+min_ctx:32k'])
+    assert.equal(config.models.providers.modelrelay.models[0].name, 'Auto Fastest')
+    assert.ok(config.agents.defaults.models['modelrelay/tag:reasoning+min_ctx:32k'])
+  })
 })
 
 describe('model grouping and filtering', () => {
@@ -3231,5 +3262,38 @@ describe('isProviderRequestRejectionError', () => {
 
   it('is not mistaken for a rate limit', () => {
     assert.equal(isRateLimitShapedError(400, live), false)
+  })
+})
+
+
+describe('isCompleteSseStream', () => {
+  const chunk = (delta, finish = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+
+  it('is complete when the stream ends with [DONE]', () => {
+    assert.equal(isCompleteSseStream(`${chunk({ content: 'hi' })}data: [DONE]\n\n`), true)
+  })
+
+  it('is complete when a chunk carries a finish_reason, even without [DONE]', () => {
+    assert.equal(isCompleteSseStream(`${chunk({ content: 'hi' })}${chunk({}, 'stop')}`), true)
+    assert.equal(isCompleteSseStream(`${chunk({}, 'tool_calls')}`), true)
+  })
+
+  it('handles CRLF line endings', () => {
+    assert.equal(isCompleteSseStream('data: {"choices":[{"delta":{"content":"x"}}]}\r\n\r\ndata: [DONE]\r\n\r\n'), true)
+  })
+
+  it('is incomplete when the stream stops mid-answer', () => {
+    assert.equal(isCompleteSseStream(`${chunk({ role: 'assistant', content: 'partial answer' })}`), false)
+    assert.equal(isCompleteSseStream(`${chunk({ content: 'a' })}${chunk({ content: 'b' })}data: {"choices":[{"delta":{"content":"tr`), false)
+  })
+
+  it('is incomplete for empty or non-string input', () => {
+    assert.equal(isCompleteSseStream(''), false)
+    assert.equal(isCompleteSseStream(null), false)
+    assert.equal(isCompleteSseStream(undefined), false)
+  })
+
+  it('ignores comment lines and non-data events', () => {
+    assert.equal(isCompleteSseStream(`: keep-alive\n\nevent: ping\n\n${chunk({ content: 'x' })}`), false)
   })
 })

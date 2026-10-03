@@ -16,7 +16,7 @@ For every request routed through `/v1/chat/completions`, per `provider/modelId`:
   - `rateLimit` — HTTP 429, or a 400/403 whose body looks like a rate-limit or quota error
   - `serverError` — HTTP 5xx or 410
   - `network` — the request never got a response
-  - `midstream` — the upstream returned 200 but ended the stream on an error-shaped first chunk
+  - `midstream` — the upstream returned 200 but the stream failed: it ended on an error-shaped first chunk, the connection dropped mid-stream, or it stopped after some content without a `finish_reason` or `[DONE]`
   - `unsupported` — the provider rejected the request's schema or tools with a 400/422 (for example an unsupported JSON Schema keyword in a tool definition); see [automatic failover](endpoints.md#automatic-failover)
 
 Caller-side errors (400, 401, 404, 422 and similar) are **not** counted against a model, since they would fail on any model.
@@ -58,5 +58,5 @@ Stats are saved to `~/.modelrelay-telemetry.json` every 30 seconds and on exit, 
 
 ## Limitations
 
-- A stream that fails *after* content has already started reaching the caller is not counted as a failure.
+- A stream cut off after content has started can't be retried on another model, because the caller has already received part of the answer. modelrelay aborts the response so the client sees the cut-off, and counts it as a `midstream` failure so the model is demoted for later requests.
 - Token rate is only recorded when the provider returns usage data.

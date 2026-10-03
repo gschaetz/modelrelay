@@ -6,16 +6,16 @@ nav_order: 8
 # Config
 
 - Router config file: `~/.modelrelay.json`
-- API key env overrides:
+- Environment variable overrides:
   - `NVIDIA_API_KEY`
   - `GROQ_API_KEY`
   - `CEREBRAS_API_KEY`
   - `SAMBANOVA_API_KEY`
-- `OPENROUTER_API_KEY`
-- `OPENCODE_API_KEY`
-- `OLLAMA_API_KEY`
-- `OLLAMA_BASE_URL`
-- `OLLAMA_MODEL`
+  - `OPENROUTER_API_KEY`
+  - `OPENCODE_API_KEY`
+  - `OLLAMA_API_KEY`
+  - `OLLAMA_BASE_URL`
+  - `OLLAMA_MODEL`
   - `CODESTRAL_API_KEY`
   - `HYPERBOLIC_API_KEY`
   - `SCALEWAY_API_KEY`

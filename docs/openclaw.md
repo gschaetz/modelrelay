@@ -81,4 +81,4 @@ How the selectors behave (full details under [Endpoints](endpoints.md) and [Mode
 - **Models you want to use must be listed under `agents.defaults.models`** as well as under the provider — a provider entry that isn't also in that map doesn't appear in `openclaw models list`.
 - A modifier modelrelay doesn't recognize is ignored rather than rejected, so check the Web UI's request log if a selector doesn't seem to be filtering as you expect.
 
-After editing `~/.openclaw/openclaw.json`, restart OpenClaw so it picks up the new model entries. `modelrelay onboard` only writes the plain `auto-fastest` entry today; the selectors above are added by hand.
+After editing `~/.openclaw/openclaw.json`, restart OpenClaw so it picks up the new model entries. `modelrelay onboard` always writes the plain `auto-fastest` entry and keeps it as your primary model. When it configures OpenClaw it also offers to add three routing presets (`auto-fastest+min_ctx:128k`, `tag:coding+min_ctx:64k` and `tag:general+min_ctx:32000`, each with a matching `contextWindow`); say yes and they appear in `openclaw models list`. Re-running `onboard` keeps any selectors you added by hand.
