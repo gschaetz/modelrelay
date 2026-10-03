@@ -11,6 +11,7 @@ import { getAutostartStatus, installAutostart, startAutostart, uninstallAutostar
 import { getPreferredLanIpv4Address } from '../lib/network.js'
 import { runUpdateCommand } from '../lib/update.js'
 import chalk from 'chalk'
+import { createHash } from 'node:crypto'
 
 function printHelp() {
   console.log('modelrelay')
@@ -280,7 +281,7 @@ async function main() {
           existing.push(key)
           config.apiKeys[provider] = existing
           saveConfig(config)
-          console.log(chalk.green(`✔ Added key to ${provider} (now ${existing.length} keys)`))
+          console.log(chalk.green(`✔ Added key to ${provider}`))
         }
       } else if (typeof existing === 'string' && existing) {
         config.apiKeys[provider] = [existing, key]
@@ -324,7 +325,7 @@ async function main() {
           config.apiKeys[provider] = existing
         }
         saveConfig(config)
-        console.log(chalk.green(`✔ Removed key [${idx}] from ${provider} (${existing.length} remaining)`))
+        console.log(chalk.green(`✔ Removed key [${idx}] from ${provider}`))
       } else {
         const idx2 = existing.indexOf(keyOrIndex)
         if (idx2 !== -1) {
@@ -337,7 +338,7 @@ async function main() {
             config.apiKeys[provider] = existing
           }
           saveConfig(config)
-          console.log(chalk.green(`✔ Removed the key from ${provider} (${existing.length} remaining)`))
+          console.log(chalk.green(`✔ Removed the key from ${provider}`))
         } else {
           console.error(`Key not found in ${provider} pool: ${keyOrIndex}`)
           process.exit(1)
@@ -413,7 +414,8 @@ async function main() {
 
       for (let i = 0; i < pool.length; i++) {
         const key = pool[i]
-        const masked = key.length > 8 ? `…${key.slice(-4)}` : '***'
+        // A short one-way fingerprint tells accounts apart without printing any part of the key itself.
+        const masked = `#${createHash('sha256').update(key).digest('hex').slice(0, 6)}`
         const liveAcct = live?.accounts?.find(a => a.index === i)
         const requests = liveAcct?.requests ?? 0
         const isRateLimited = liveAcct?.rateLimited ?? false
