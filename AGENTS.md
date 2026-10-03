@@ -33,6 +33,22 @@ User-facing reference documentation lives in `docs/` (one page per topic) and th
 | Config file, env vars, OpenAI-compatible endpoints | `docs/configuration.md` |
 | Update and local-testing troubleshooting | `docs/troubleshooting.md` |
 
+## Pull Request Workflow (MANDATORY)
+
+Nothing goes straight to `master`. Every change — features, fixes, docs-only edits, version bumps — lands through a pull request:
+
+1. **Branch from an up-to-date `master`**, named by kind: `feat/<slug>`, `fix/<slug>` or `docs/<slug>`. Never commit or push to `master` directly.
+2. **Run `pnpm test` before pushing**, and make sure the docs are in sync (see Documentation Sync). Include the `package.json` version bump in the PR when the change is releasable.
+3. **Push the branch and open a PR**: `gh pr create --repo gschaetz/modelrelay --base master`. This repo is a fork, so always pass `--repo gschaetz/modelrelay` or `gh` targets the archived upstream. The PR title is a descriptive sentence with no `fix:`/`feat:` prefix (same rule as commit messages). The body covers what changed and why, how it was tested, and which docs were updated. End the body with the attribution line.
+4. **CI must pass** (`ci.yml` runs the tests, `npm audit` and the license check; CodeQL runs on the PR too). Fix failures on the branch.
+5. **Agents open PRs but do not merge them.** The owner reviews and merges, or explicitly tells the agent to merge. After the merge, update local `master` (`git checkout master && git pull`) before releasing.
+6. **Releasing happens from `master` after the merge**, using the Release Process below. Creating the release is what publishes to npm.
+7. One logical change per PR; keep unrelated work (for example a docs tweak and a feature) in separate PRs unless they are inseparable.
+
+**Branch protection enforces this on GitHub.** `master` requires a pull request and the `test` and `Analyze (javascript-typescript)` checks to pass, blocks force pushes and deletion, and applies to admins too, so a direct push is rejected. If a push is rejected, open a PR instead. Never disable or bypass branch protection, and never change its settings, without the owner explicitly asking for it.
+
+The `docker-images` repo on GitLab is a separate project with its own flow and is not covered by this section.
+
 ## Git Commits
 
 When making a commit on behalf of the user, NEVER prefix your commit message with `fix:`, `feature:`, `feat:`, `chore:`, or any other prefix. 
@@ -46,10 +62,10 @@ When releasing a new version, follow this exact process:
 2. **Version Bump**: Update version in `package.json`. If the releas only includes bug 
 fixes, bump a patch version  (e.g., `1.23.3` → `1.23.4`). If it includes new features, bump a minor version  (e.g., `1.23.3` → `1.24.0`)
 Do not bump the major version.
-3. **Commit ALL Changed Files**: `git add . && git commit -m "Fixed issue with autostart"`
+3. **Commit ALL Changed Files on your feature branch** (never on `master`): `git add . && git commit -m "Fixed issue with autostart"`
    - Always commit using a description of what was changed as the commit message. 
    - Include ALL modified files in the commit (bin/, lib/, test/, README.md, etc.)
-4. **Push**: `git push origin master` — this repo's release branch is `master` (pushing does not publish)
+4. **Open a PR and get it merged**: push the branch and open a pull request into `master` (see Pull Request Workflow above), then `git checkout master && git pull` once it is merged. The version bump from step 2 is part of that PR, and pushing to `master` does not publish.
 5. **Create GitHub Release** — this is what triggers the GitHub Actions npm publish. This repo is a fork, so always pass `--repo gschaetz/modelrelay` (or run `gh repo set-default gschaetz/modelrelay` once), otherwise `gh` targets the archived upstream and fails:
    ```bash
    gh release create VERSION --repo gschaetz/modelrelay --target master --title "VERSION" --notes "Release notes"
@@ -71,7 +87,7 @@ Do not bump the major version.
 **Never trust local-only testing.** `pnpm start` runs from the repo and won't catch missing files in the published package. Always run the full npm verification:
 
 1. Bump version in `package.json` (e.g. `1.23.3` → `1.23.4`)
-2. Commit and push to `master`, then create the GitHub release (see Release Process step 5) — creating the release is what triggers the npm publish
+2. Get the change merged to `master` through a PR (see Pull Request Workflow), then create the GitHub release from `master` (see Release Process step 5) — creating the release is what triggers the npm publish
 3. Wait for the new version to appear on npm:
    ```bash
    # Poll until npm has the new version
