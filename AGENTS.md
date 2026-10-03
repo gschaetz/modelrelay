@@ -45,6 +45,8 @@ Nothing goes straight to `master`. Every change — features, fixes, docs-only e
 6. **Releasing happens from `master` after the merge**, using the Release Process below. Creating the release is what publishes to npm.
 7. One logical change per PR; keep unrelated work (for example a docs tweak and a feature) in separate PRs unless they are inseparable.
 
+**Branch protection enforces this on GitHub.** `master` requires a pull request and the `test` and `Analyze (javascript-typescript)` checks to pass, blocks force pushes and deletion, and applies to admins too, so a direct push is rejected. If a push is rejected, open a PR instead. Never disable or bypass branch protection, and never change its settings, without the owner explicitly asking for it.
+
 The `docker-images` repo on GitLab is a separate project with its own flow and is not covered by this section.
 
 ## Git Commits
