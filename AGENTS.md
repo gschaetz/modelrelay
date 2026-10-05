@@ -31,6 +31,7 @@ User-facing reference documentation lives in `docs/` (one page per topic) and th
 | Tags, `min_ctx`, `exclude`, QoS | `docs/routing.md` |
 | Telemetry, `/api/telemetry` | `docs/telemetry.md` |
 | Dashboard UI, search syntax, filters, request logs | `docs/dashboard.md` |
+| Admin token, host/origin checks, `--host` | `docs/security.md` |
 | Config file, env vars, OpenAI-compatible endpoints | `docs/configuration.md` |
 | Update and local-testing troubleshooting | `docs/troubleshooting.md` |
 
@@ -69,7 +70,8 @@ The admin API and the proxy are unauthenticated, accept request bodies of severa
 2. **Never index a plain object with a user-supplied key unchecked.** `obj['__proto__']` resolves to `Object.prototype`, so `obj[key].x = 1` pollutes every object. Validate keys with `isSafeObjectKey`, validate provider keys with `isKnownProviderKey`, and use own-property checks (`Object.prototype.hasOwnProperty.call`) instead of truthiness on plain objects such as `sources` or `MODEL_ID_ALIASES`.
 3. **Bound input sizes.** Admin routes parse JSON with a 1 MB limit (`MODELRELAY_API_JSON_LIMIT`); validate string lengths on routes that store them.
 4. **Don't print secrets.** The CLI never prints any part of a key, nor counts derived from the key list; `modelrelay accounts` identifies keys only by their index.
-5. The suites `regex replacements keep their exact behavior`, `adversarial input cannot stall the router` and `prototype pollution guards` enforce this. Extend them when you add a new input path.
+5. **Admin API (`/api/*`).** It must stay behind the guard in `lib/admin-guard.js` (host check, origin check, optional token). A new admin route must never return a raw API key in a list or status response (use a masked value, or an on-demand per-key endpoint); never add CORS headers to `/api` (CORS belongs to the `/v1` proxy only); and a feature that changes keys should do it server-side (see `addApiKey` / `removeApiKeyIndex`) instead of making the browser hold the pool. Document any new setting in `docs/security.md`.
+6. The suites `regex replacements keep their exact behavior`, `adversarial input cannot stall the router` and `prototype pollution guards` enforce this. Extend them when you add a new input path.
 
 ## Git Commits
 

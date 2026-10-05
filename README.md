@@ -106,6 +106,7 @@ Full documentation lives at **[schaetzkc.com/modelrelay](https://schaetzkc.com/m
 - [Routing](https://schaetzkc.com/modelrelay/routing/) — tags, `min_ctx`, `exclude`, QoS
 - [Telemetry](https://schaetzkc.com/modelrelay/telemetry/)
 - [Dashboard](https://schaetzkc.com/modelrelay/dashboard/) — columns, search syntax, filters, request logs
+- [Security](https://schaetzkc.com/modelrelay/security/) — admin token, host checks, binding to this machine only
 - [Configuration](https://schaetzkc.com/modelrelay/configuration/) — config file, environment variables, OpenAI-compatible endpoints
 - [Troubleshooting](https://schaetzkc.com/modelrelay/troubleshooting/)
 

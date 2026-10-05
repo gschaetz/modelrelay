@@ -17,6 +17,7 @@ permalink: /
 - [Routing](routing.md) — model tags, `min_ctx`, `exclude`, and how QoS weighs speed and quality
 - [Telemetry](telemetry.md) — real-traffic reliability tracking and `/api/telemetry`
 - [Dashboard](dashboard.md) — the web UI: Context and Reliability columns, search syntax, filters, request logs
+- [Security](security.md) — admin token, host and origin checks, binding to this machine only
 - [Configuration](configuration.md) — config file, environment variables, OpenAI-compatible endpoints, config migration
 - [Troubleshooting](troubleshooting.md) — updates and local testing
 

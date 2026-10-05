@@ -10,5 +10,8 @@ services:
     environment:
       - NODE_ENV=production
       - HOME=/app/config
+      # Recommended if the dashboard is reachable beyond this machine: require sign-in for the admin API.
+      # - MODELRELAY_ADMIN_TOKEN=change-me-to-16-or-more-random-characters
+      # - MODELRELAY_ALLOWED_HOSTS=modelrelay.example.com   # only if you open the dashboard through a host name
 volumes:
   modelrelay_config:

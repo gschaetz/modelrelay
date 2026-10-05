@@ -6,7 +6,7 @@ nav_order: 4
 # CLI
 
 ```bash
-modelrelay [--port <number>] [--log] [--ban <model1,model2>]
+modelrelay [--port <number>] [--host <address>] [--log] [--ban <model1,model2>]
 modelrelay onboard [--port <number>]
 modelrelay install --autostart
 modelrelay start --autostart
@@ -20,6 +20,8 @@ modelrelay config import <token>
 ```
 
 Request terminal logging is disabled by default. Use `--log` to enable it.
+
+`--host <address>` sets the network interface the router listens on (default: all interfaces). Use `--host 127.0.0.1` to keep the router reachable from this machine only. See [Security](security.md).
 
 `modelrelay install --autostart` also triggers an immediate start attempt so you do not need a separate command after install.
 

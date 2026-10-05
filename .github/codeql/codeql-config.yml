@@ -1,0 +1,5 @@
+name: modelrelay CodeQL configuration
+# Test fixtures spin up throwaway servers (no rate limiting, fake credentials) and are never shipped, so they are
+# not scanned. Everything that ships (bin, lib, public, sources) is.
+paths-ignore:
+  - test

@@ -1,6 +1,6 @@
 ---
 title: Configuration
-nav_order: 9
+nav_order: 10
 ---
 
 # Config
@@ -23,6 +23,14 @@ nav_order: 9
   - `KIRO_OAUTH_CLIENT_ID` (optional, for AWS Builder/IDC refresh flow)
   - `KIRO_OAUTH_CLIENT_SECRET` (optional, for AWS Builder/IDC refresh flow)
   - `GOOGLE_API_KEY`
+
+- Security and server settings (see [Security](security.md)):
+  - `MODELRELAY_ADMIN_TOKEN` (require sign-in for the admin API and dashboard)
+  - `MODELRELAY_ALLOWED_HOSTS` (extra host names the admin API answers to; `*` disables the check)
+  - `MODELRELAY_ALLOWED_ORIGINS` (extra browser origins, for reverse proxies that rewrite `Host`)
+  - `MODELRELAY_HOST` (interface to listen on; same as `--host`)
+  - `MODELRELAY_API_JSON_LIMIT` (admin API request body limit, default `1mb`)
+  - `MODELRELAY_JSON_LIMIT` (`/v1` proxy request body limit, default `10mb`)
 
 Kiro OAuth notes:
 - Base endpoint is preconfigured to `https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse`
