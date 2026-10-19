@@ -34,6 +34,7 @@ User-facing reference documentation lives in `docs/` (one page per topic) and th
 | Admin token, host/origin checks, `--host` | `docs/security.md` |
 | Config file, env vars, OpenAI-compatible endpoints | `docs/configuration.md` |
 | Update and local-testing troubleshooting | `docs/troubleshooting.md` |
+| Free tier limits and behavior notes | `docs/free-tiers.md` |
 
 ## Pull Request Workflow (MANDATORY)
 
