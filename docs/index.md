@@ -20,6 +20,7 @@ permalink: /
 - [Security](security.md) — admin token, host and origin checks, binding to this machine only
 - [Configuration](configuration.md) — config file, environment variables, OpenAI-compatible endpoints, config migration
 - [Troubleshooting](troubleshooting.md) — updates and local testing
+- [Free tier notes](free-tiers.md) — provider limits, stale model ids, slow endpoints, and which errors should fall over
 
 ## Links
 
