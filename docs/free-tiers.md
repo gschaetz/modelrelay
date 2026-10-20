@@ -47,8 +47,22 @@ Two details are easy to get wrong:
 - The `read` tool must be named exactly `read`. A differently named function does not satisfy the
   gate.
 
-The router applies this shape to OpenCode requests, so the free models are routable. The API key
-is not what makes them work — a request with the right shape is accepted even without a key.
+The router applies this shape to OpenCode requests, so the free models are routable.
+
+**No API key is required for the free models.** The key is not what makes them work — the request
+shape is. Measured against the live endpoint:
+
+| `Authorization` header | Result |
+|---|---|
+| absent | accepted |
+| `Bearer public` | accepted |
+| `Bearer ` (empty) | accepted |
+| a key that is not a real OpenCode key | `500` "Invalid credential" |
+
+A missing key is therefore harmless, but a *wrong* key is not: it fails with a server error
+rather than being ignored. The router sends no `Authorization` header when no OpenCode key is
+configured, which is the correct behavior for the free tier. A key is still required for the paid
+Zen models.
 
 ## Model ids go stale
 
