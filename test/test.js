@@ -49,7 +49,7 @@ import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
 import { normalizeSecret, buildOpenAICompatibleInstanceKey as buildInstanceKeyForSafetyTests, exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint } from '../lib/config.js'
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse } from '../lib/server.js'
+import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildOpencodeRequestPayload, makeOpencodeSessionId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse } from '../lib/server.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -809,6 +809,76 @@ describe('provider api key resolution', () => {
     assert.equal(headers['x-opencode-session'], 'ses_test')
     assert.equal(headers['x-opencode-request'], 'req_test')
     assert.equal(headers['x-opencode-client'], 'cli')
+  })
+
+  it('mints OpenCode session ids in the shape the Zen free tier requires', () => {
+    // `ses_` + 12 lowercase hex + 14 base62 = 30 characters in total.
+    for (let i = 0; i < 20; i++) {
+      const sessionId = makeOpencodeSessionId()
+      assert.match(sessionId, /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+      // `ses_` (4) + 12 hex + 14 base62 = 30 characters in total.
+      assert.equal(sessionId.length, 30)
+      assert.equal(sessionId.slice(4).length, 26)
+    }
+  })
+
+  it('derives the OpenCode session hex block from the current timestamp', () => {
+    const now = 1792530294000
+    const sessionId = makeOpencodeSessionId(now)
+    assert.ok(sessionId.startsWith('ses_'))
+    assert.equal(sessionId.slice(4, 16), (BigInt(now) & ((1n << 48n) - 1n)).toString(16).padStart(12, '0'))
+  })
+
+  it('sends a Zen-shaped session id when no explicit one is supplied', () => {
+    // The header path must not fall back to the 32-hex uuid form: that shape
+    // is refused with FreeTierError by the Zen free tier.
+    const headers = buildProviderRequestHeaders('opencode', {})
+    assert.match(headers['x-opencode-session'], /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    assert.equal(headers['x-opencode-session'].length, 30)
+  })
+
+  it('sends an OpenCode User-Agent so the Zen free tier accepts the request', () => {
+    const headers = buildProviderRequestHeaders('opencode', {
+      projectSeed: 'C:/example/project',
+      sessionId: 'ses_test',
+      requestId: 'req_test',
+    })
+
+    assert.match(headers['User-Agent'], /^opencode\/\d+\.\d+\.\d+$/)
+  })
+
+  it('adds the OpenCode free-tier body shape: stream, a read tool and the system prompt', () => {
+    const payload = buildOpencodeRequestPayload({
+      model: 'nemotron-3.5-super-vl-free',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })
+
+    assert.equal(payload.stream, true)
+    assert.ok(payload.tools.some((tool) => tool.function.name === 'read'))
+    assert.equal(payload.messages[0].role, 'system')
+    assert.equal(payload.messages[0].content, 'You are opencode')
+  })
+
+  it('keeps a caller-supplied read tool and system message when rewriting the OpenCode body', () => {
+    const payload = buildOpencodeRequestPayload({
+      model: 'nemotron-3.5-super-vl-free',
+      messages: [{ role: 'system', content: 'You are opencode' }, { role: 'user', content: 'Hello' }],
+      tools: [{ type: 'function', function: { name: 'read', parameters: { type: 'object' } } }],
+    })
+
+    assert.equal(payload.tools.length, 1)
+    assert.equal(payload.messages.length, 2)
+    assert.equal(payload.messages[0].content, 'You are opencode')
+  })
+
+  it('routes the OpenCode provider request body through the free-tier shape', () => {
+    const payload = buildProviderRequestBody('opencode', {
+      model: 'nemotron-3.5-super-vl-free',
+      messages: [{ role: 'user', content: 'Hello' }],
+    }, 'nemotron-3.5-super-vl-free')
+
+    assert.equal(payload.stream, true)
+    assert.ok(payload.tools.some((tool) => tool.function.name === 'read'))
   })
 
   it('adds Kiro SDK headers to provider requests', () => {
