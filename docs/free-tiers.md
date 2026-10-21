@@ -46,7 +46,7 @@ environment variable. The environment variable wins over the config file. See
 
 - imitates the official OpenCode client, which may conflict with OpenCode's terms of service;
 - can stop working at any time, without a notice from OpenCode;
-- shifts the responsibility for that use onto you.
+- means that you are responsible for using it.
 
 modelrelay prints a warning at startup and shows one in the dashboard for as long as the mode is on.
 
