@@ -50,7 +50,7 @@ import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
 import { normalizeSecret, buildOpenAICompatibleInstanceKey as buildInstanceKeyForSafetyTests, exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint, isOpencodeFreeTierCompatEnabled, getOpencodeFreeTierUserAgent, DEFAULT_OPENCODE_USER_AGENT } from '../lib/config.js';
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse, buildOpencodeFreeTierPayload, stripInjectedToolCalls, stripInjectedToolCallsFromSseChunk, collectOpencodeStreamAsJson, OPENCODE_INJECTED_READ_TOOL, OPENCODE_FREE_COMPAT_WARNING, isOpencodeFreeModelUnsupported } from '../lib/server.js';
+import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse, buildOpencodeFreeTierPayload, stripInjectedToolCalls, stripInjectedToolCallsFromSseChunk, collectOpencodeStreamAsJson, OPENCODE_INJECTED_READ_TOOL, OPENCODE_FREE_COMPAT_WARNING, isOpencodeFreeModelUnsupported, buildPingRequest } from '../lib/server.js';
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -886,6 +886,23 @@ describe('provider api key resolution', () => {
 
     assert.equal(payload.tools.length, 1)
     assert.equal(payload.messages.length, 2)
+  })
+
+  it('sends the free-tier shape in the OpenCode health check', () => {
+    // The ping has to use the same request as a real request. If it did not,
+    // the health check would report the free models as `down` with a 403 even
+    // though the proxy could route them.
+    const on = buildPingRequest('opencode', 'nemotron-3.5-super-vl-free', null, { opencodeFreeTierCompat: true })
+    assert.equal(on.headers['User-Agent'], DEFAULT_OPENCODE_USER_AGENT)
+    assert.match(on.headers['x-opencode-session'], /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    assert.equal(on.payload.stream, true)
+    assert.ok(on.payload.tools.some((tool) => tool.function.name === 'read'))
+
+    // Another provider is unaffected.
+    const other = buildPingRequest('nvidia', 'nvidia/nemotron-3-ultra-550b-a55b', 'key', { opencodeFreeTierCompat: true })
+    assert.equal(other.headers['User-Agent'], undefined)
+    assert.equal(other.payload.stream, undefined)
+    assert.equal(other.payload.tools, undefined)
   })
 
   it('routes the OpenCode provider body through the free-tier shape only when opted in', () => {
