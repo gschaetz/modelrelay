@@ -50,7 +50,7 @@ import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
 import { normalizeSecret, buildOpenAICompatibleInstanceKey as buildInstanceKeyForSafetyTests, exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint, isOpencodeFreeTierCompatEnabled, getOpencodeFreeTierUserAgent, DEFAULT_OPENCODE_USER_AGENT } from '../lib/config.js';
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse, buildOpencodeFreeTierPayload, stripInjectedToolCalls, stripInjectedToolCallsFromSseChunk, collectOpencodeStreamAsJson, OPENCODE_INJECTED_READ_TOOL, OPENCODE_FREE_COMPAT_WARNING, isOpencodeFreeModelUnsupported, buildPingRequest } from '../lib/server.js';
+import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse, buildOpencodeFreeTierPayload, stripInjectedToolCalls, stripInjectedToolCallsFromSseChunk, collectOpencodeStreamAsJson, OPENCODE_INJECTED_READ_TOOL, OPENCODE_FREE_COMPAT_WARNING, isOpencodeFreeModelUnsupported, buildPingRequest, buildOpencodeCompatOptions } from '../lib/server.js';
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -857,12 +857,30 @@ describe('provider api key resolution', () => {
   })
 
   it('sends the OpenCode free-tier headers only when the compatibility mode is on', () => {
-    const off = buildProviderRequestHeaders('opencode', { freeTierCompat: false })
+    // Off: no User-Agent and the old session id format.
+    const offOptions = buildOpencodeCompatOptions('opencode', {})
+    assert.equal(offOptions.freeTierCompat, false)
+    const off = buildProviderRequestHeaders('opencode', offOptions)
     assert.equal(off['User-Agent'], undefined)
+    assert.match(off['x-opencode-session'], /^ses_[0-9a-f]{32}$/)
 
-    const on = buildProviderRequestHeaders('opencode', { freeTierCompat: true, userAgent: 'opencode/1.2.3' })
-    assert.equal(on['User-Agent'], 'opencode/1.2.3')
+    // On: a matching User-Agent and the session id format the endpoint expects.
+    const onOptions = buildOpencodeCompatOptions('opencode', { opencodeFreeTierCompat: true })
+    assert.equal(onOptions.freeTierCompat, true)
+    const on = buildProviderRequestHeaders('opencode', onOptions)
+    assert.equal(on['User-Agent'], DEFAULT_OPENCODE_USER_AGENT)
     assert.match(on['x-opencode-session'], /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+
+    // The User-Agent stays overridable.
+    const custom = buildOpencodeCompatOptions('opencode', {
+      opencodeFreeTierCompat: true,
+      opencodeFreeTierUserAgent: 'opencode/1.2.3',
+    })
+    assert.equal(buildProviderRequestHeaders('opencode', custom)['User-Agent'], 'opencode/1.2.3')
+
+    // Another provider is unaffected.
+    const other = buildOpencodeCompatOptions('nvidia', { opencodeFreeTierCompat: true })
+    assert.equal(other.freeTierCompat, false)
   })
 
   it('rewrites the OpenCode body into the free-tier shape when the compatibility mode is on', () => {
