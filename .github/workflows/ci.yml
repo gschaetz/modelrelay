@@ -16,5 +16,7 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm test
-      - run: npm audit --audit-level=moderate
+      # The npm bundled with Node 22 calls an audit endpoint the registry is retiring (HTTP 400); npm 11 uses the
+      # bulk advisory endpoint.
+      - run: npx --yes npm@11 audit --audit-level=moderate
       - run: npm run license-check
