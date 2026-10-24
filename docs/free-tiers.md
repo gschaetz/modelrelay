@@ -50,7 +50,7 @@ environment variable. The environment variable wins over the config file. See
 
 modelrelay prints a warning at startup and shows one in the dashboard for as long as the mode is on.
 
-Note: OpenCode's Zen documentation (https://opencode.ai/docs/zen) states that for some free models collected data may be used to improve the model, that the NVIDIA endpoints are trial use only ("do not submit personal or confidential data"), and that some models are geographically restricted. The existing line above that free models may train on prompts does not mention the trial or regional limits.
+Caveat: OpenCode's Zen free models may train on prompts, have trial-only NVIDIA endpoints, and be geographically restricted.
 
 ### What the endpoint checks
 
