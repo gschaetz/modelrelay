@@ -50,7 +50,7 @@ import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
 import { normalizeSecret, buildOpenAICompatibleInstanceKey as buildInstanceKeyForSafetyTests, exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint, isOpencodeFreeTierCompatEnabled, getOpencodeFreeTierUserAgent, DEFAULT_OPENCODE_USER_AGENT } from '../lib/config.js';
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse, buildOpencodeFreeTierPayload, stripInjectedToolCalls, stripInjectedToolCallsFromSseChunk, stripInjectedToolCallsFromSseStream, collectOpencodeStreamAsJson, OPENCODE_INJECTED_READ_TOOL, OPENCODE_FREE_COMPAT_WARNING, isOpencodeFreeModelUnsupported, buildPingRequest, buildOpencodeCompatOptions } from '../lib/server.js';
+import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse, buildOpencodeFreeTierPayload, stripInjectedToolCalls, stripInjectedToolCallsFromSseChunk, stripInjectedToolCallsFromSseStream, createInjectedReadSseStripper, collectOpencodeStreamAsJson, OPENCODE_INJECTED_READ_TOOL, OPENCODE_FREE_COMPAT_WARNING, isOpencodeFreeModelUnsupported, buildPingRequest, buildOpencodeCompatOptions } from '../lib/server.js';
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -4256,6 +4256,35 @@ describe('OpenCode free-tier bearer retry', () => {
     const out = buildProviderRequestBody('opencode', body, 'm', { freeTierCompat: true, callerDeclaredRead: false })
     assert.equal(out.stream, true)
     assert.ok(Array.isArray(out.tools) && out.tools.some((t) => (t?.function?.name ?? t?.name) === 'read'))
+  })
+})
+
+describe('OpenCode free-tier SSE stripper (incremental)', () => {
+  it('releases a trailing line without a newline on end()', () => {
+    const stripper = createInjectedReadSseStripper()
+    const line = 'data: {"choices":[{"delta":{"content":"hi"}}]}'
+    assert.equal(stripper.write(line), '')
+    assert.equal(stripper.end(), line)
+  })
+
+  it('drops later deltas for an injected read index and rewrites finish_reason', () => {
+    const stripper = createInjectedReadSseStripper()
+    const first = 'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'read', arguments: '' } }] } }] }) + '\n'
+    const second = 'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"a":1}' } }] } }] }) + '\n'
+    const last = 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + '\n'
+    const out = stripper.write(first) + stripper.write(second) + stripper.write(last) + stripper.end()
+    assert.equal(out.includes('"read"'), false)
+    assert.equal(out.includes('{\\"a\\":1}'), false)
+    assert.ok(out.includes('"finish_reason":"stop"'))
+  })
+
+  it('keeps finish_reason tool_calls when a real tool call was made', () => {
+    const stripper = createInjectedReadSseStripper()
+    const call = 'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'grep', arguments: '{}' } }] } }] }) + '\n'
+    const last = 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + '\n'
+    const out = stripper.write(call) + stripper.write(last) + stripper.end()
+    assert.ok(out.includes('"finish_reason":"tool_calls"'))
+    assert.ok(out.includes('grep'))
   })
 })
 

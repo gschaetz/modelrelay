@@ -11,7 +11,7 @@ What free tiers do in practice, measured against real providers in October 2026.
 
 | Provider | What we saw |
 |---|---|
-| OpenRouter | Free models are limited to 20 requests per minute, and 50 per day on a key with no credits. A one-time purchase of $10 or more in credits raises the daily limit to 1,000. A key limit of $0 still allows `:free` models. |
+| OpenRouter | Free models are limited to 20 requests per minute, and 50 per day until you have bought $10 of credits in total (all time); at $10 or more the daily limit is 1,000. The limit is per account, not per key, so a new key does not reset it. A key spending limit of $0 still allows `:free` models. See [OpenRouter's limits](https://openrouter.ai/docs/api-reference/limits). |
 | OpenCode Zen | The free models answer `403 FreeTierError` ("the free tier can only be used from within OpenCode") for any other client. By default modelrelay does not imitate the OpenCode client, so these models are listed as `unsupported` and are not routed to. See [OpenCode Zen free models](#opencode-zen-free-models). |
 | Ollama Cloud | The free plan answers `402` for the premium models. |
 | Cerebras | Answers `402` for models outside the free allowance. |
