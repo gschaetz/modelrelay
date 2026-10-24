@@ -4233,4 +4233,21 @@ describe('admin guard with no token configured', () => {
       await new Promise(resolve => server.close(resolve))
     }
   })
+describe('OpenCode free-tier SSE transform extras', () => {
+  it('handles a read call whose name and arguments come in separate deltas', () => {
+    const chunk = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"read\"}}]}}]}\n\n"
+      + "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]}}]}\n\n"
+    const out = stripInjectedToolCallsFromSseChunk(chunk)
+    assert.equal(out.includes('"name":"read"'), false)
+  })
+
+  it('keeps finish_reason tool_calls when a caller tool call follows a read call', () => {
+    const chunk = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"read\",\"arguments\":\"{}\"}}]}}]}\n\n"
+      + "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"c2\",\"function\":{\"name\":\"foo\",\"arguments\":\"{}\"}}]}}]}\n\n"
+      + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+    const out = stripInjectedToolCallsFromSseChunk(chunk)
+    assert.ok(out.includes('tool_calls'))
+  })
+})
+
 })
