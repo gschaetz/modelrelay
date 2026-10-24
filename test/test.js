@@ -4250,4 +4250,13 @@ describe('OpenCode free-tier SSE transform extras', () => {
   })
 })
 
+describe('OpenCode free-tier bearer retry', () => {
+  it('retried body keeps stream true and injected read tool', () => {
+    const body = { model: 'm', messages: [{ role: 'user', content: 'hi' }] }
+    const out = buildProviderRequestBody('opencode', body, 'm', { freeTierCompat: true, callerDeclaredRead: false })
+    assert.equal(out.stream, true)
+    assert.ok(Array.isArray(out.tools) && out.tools.some((t) => (t?.function?.name ?? t?.name) === 'read'))
+  })
+})
+
 })
