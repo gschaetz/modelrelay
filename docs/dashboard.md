@@ -28,7 +28,7 @@ The search box matches plain words against the model name, provider, id and tags
 |---|---|
 | `tag:coding` | models carrying that tag (curated or your own); `tag:coding,fast` requires both |
 | `provider:groq` | provider key containing the text |
-| `status:up` | exact status (`up`, `down`, `disabled`, `excluded`, `banned`, `noauth`) |
+| `status:up` | exact status (`up`, `down`, `disabled`, `excluded`, `banned`, `noauth`, `unsupported`) |
 | `ctx>=64k`, `ctx:64k` or `min_ctx:64k` | effective context of at least that size (`k` and `m` suffixes work) |
 
 For example `qwen tag:coding ctx>=64k provider:groq`.

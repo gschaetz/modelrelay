@@ -31,6 +31,8 @@ nav_order: 10
   - `MODELRELAY_HOST` (interface to listen on; same as `--host`)
   - `MODELRELAY_API_JSON_LIMIT` (admin API request body limit, default `1mb`)
   - `MODELRELAY_JSON_LIMIT` (`/v1` proxy request body limit, default `10mb`)
+  - `MODELRELAY_OPENCODE_FREE_COMPAT` (`1` enables the OpenCode Zen free-tier compatibility mode, see below)
+  - `MODELRELAY_OPENCODE_FREE_TIER_USER_AGENT` (overrides the User-Agent sent in that mode)
 
 Kiro OAuth notes:
 - Base endpoint is preconfigured to `https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse`
@@ -38,6 +40,38 @@ Kiro OAuth notes:
 - Authentication uses OAuth access tokens refreshed from:
   - `KIRO_REFRESH_TOKEN`, or
   - `~/.aws/sso/cache` (auto-detected refresh token), following OmniRoute’s approach.
+
+## OpenCode Zen free-tier compatibility
+
+OpenCode's free models only answer requests that carry the request shape of the official OpenCode
+client. By default modelrelay does not imitate that client, so those models are listed as
+`unsupported` and are not routed to. The reasoning and the measured gate conditions are in
+[Free tier notes](free-tiers.md).
+
+Set `opencodeFreeTierCompat` in `~/.modelrelay.json` to enable the mode:
+
+```jsonc
+{
+  "opencodeFreeTierCompat": true
+}
+```
+
+Or set the environment variable, which takes precedence over the config file:
+
+```bash
+export MODELRELAY_OPENCODE_FREE_COMPAT=1
+```
+
+Only `1`, `true`, `yes` and `on` enable it; anything else leaves it off, so a typo cannot silently
+start rewriting requests.
+
+The mode sends a User-Agent of `opencode/1.19.3`. To use a different one — for example when that
+version goes stale — set `opencodeFreeTierUserAgent` in the config file or
+`MODELRELAY_OPENCODE_FREE_TIER_USER_AGENT` in the environment.
+
+**The mode imitates the official OpenCode client, which may conflict with OpenCode's terms of
+service, and it can stop working at any time.** modelrelay prints a warning at startup and shows
+one in the dashboard while the mode is on. Enabling it is your decision and your responsibility.
 
 For hosted Ollama, set `OLLAMA_API_KEY` and optionally override `OLLAMA_BASE_URL` / `OLLAMA_MODEL`.
 If you leave the Ollama base URL blank in the UI, modelrelay defaults to `https://ollama.com/v1`.
