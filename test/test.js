@@ -35,7 +35,8 @@ import {
   parseOpenRouterKeyRateLimit,
   selectNextApiKeyFromPool,
   VERDICT_ORDER,
-} from '../lib/utils.js'
+  isModelEligibleForRouting,
+} from '../lib/utils.js';
 import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeTelemetryStore, recordFailure, recordSuccess, reliabilityMultiplier, summarizeTelemetry, summarizeTelemetryEntry, TELEMETRY_HALF_LIFE_MS, TELEMETRY_MIN_MULTIPLIER } from '../lib/telemetry.js'
 import http from 'node:http'
 import express from 'express'
@@ -47,9 +48,9 @@ import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { buildOpenRouterQualityIndex, fitLinearRegression, qualityLookupKeys, resolveModelQuality } from '../lib/model-quality.js'
 import { getConfiguredTagNames, getModelTagKey, getModelTags as getUserModelTags, normalizeTag, normalizeTags, setModelTags } from '../lib/tags.js'
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
-import { normalizeSecret, buildOpenAICompatibleInstanceKey as buildInstanceKeyForSafetyTests, exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint } from '../lib/config.js'
+import { normalizeSecret, buildOpenAICompatibleInstanceKey as buildInstanceKeyForSafetyTests, exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint, isOpencodeFreeTierCompatEnabled, getOpencodeFreeTierUserAgent, DEFAULT_OPENCODE_USER_AGENT } from '../lib/config.js';
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse } from '../lib/server.js'
+import { isKnownProviderKey, captureProxyRateLimit, buildKiroRequestPayload, buildKiroSocialLoginUrl, buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestBody, buildProviderRequestHeaders, exchangeKiroSocialAuthFlow, exchangeKiroSocialCode, extractKiroEmailFromAccessToken, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, parseKiroEventFrame, pollKiroBuilderIdToken, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, startKiroBuilderIdDeviceAuth, startKiroSocialAuthFlow, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta, transformKiroResponse, buildOpencodeFreeTierPayload, stripInjectedToolCalls, stripInjectedToolCallsFromSseChunk, stripInjectedToolCallsFromSseStream, createInjectedReadSseStripper, collectOpencodeStreamAsJson, OPENCODE_INJECTED_READ_TOOL, OPENCODE_FREE_COMPAT_WARNING, isOpencodeFreeModelUnsupported, buildPingRequest, buildOpencodeCompatOptions } from '../lib/server.js';
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -809,6 +810,269 @@ describe('provider api key resolution', () => {
     assert.equal(headers['x-opencode-session'], 'ses_test')
     assert.equal(headers['x-opencode-request'], 'req_test')
     assert.equal(headers['x-opencode-client'], 'cli')
+  })
+
+  it('leaves the OpenCode request untouched by default', () => {
+    // The free-tier compatibility is opt-in. Without it the request must look
+    // exactly like it did before: no User-Agent, no injected tool, no forced
+    // stream, and the original session id format.
+    const headers = buildProviderRequestHeaders('opencode', { projectSeed: 'C:/example/project' })
+    assert.equal(headers['User-Agent'], undefined)
+    assert.match(headers['x-opencode-session'], /^ses_[0-9a-f]{32}$/)
+
+    const body = { model: 'nemotron-3.5-super-vl-free', messages: [{ role: 'user', content: 'Hi' }] }
+    const out = buildProviderRequestBody('opencode', body, 'nemotron-3.5-super-vl-free')
+    assert.equal(out, body)
+    assert.equal(out.stream, undefined)
+    assert.equal(out.tools, undefined)
+  })
+
+  it('reads the OpenCode free-tier compatibility flag from the config and the env var', () => {
+    assert.equal(isOpencodeFreeTierCompatEnabled({}), false)
+    assert.equal(isOpencodeFreeTierCompatEnabled({ opencodeFreeTierCompat: false }), false)
+    assert.equal(isOpencodeFreeTierCompatEnabled({ opencodeFreeTierCompat: true }), true)
+    assert.equal(isOpencodeFreeTierCompatEnabled({ opencodeFreeTierCompat: '1' }), true)
+    // A typo must not silently enable the request rewriting.
+    assert.equal(isOpencodeFreeTierCompatEnabled({ opencodeFreeTierCompat: 'yes please' }), false)
+    assert.equal(isOpencodeFreeTierCompatEnabled({ opencodeFreeTierCompat: 1 }), false)
+
+    process.env.MODELRELAY_OPENCODE_FREE_COMPAT = '1'
+    try {
+      // The env var wins over the config file.
+      assert.equal(isOpencodeFreeTierCompatEnabled({ opencodeFreeTierCompat: false }), true)
+    } finally {
+      delete process.env.MODELRELAY_OPENCODE_FREE_COMPAT
+    }
+  })
+
+  it('lets the OpenCode User-Agent be overridden', () => {
+    process.env.MODELRELAY_OPENCODE_FREE_TIER_USER_AGENT = 'opencode/9.9.9'
+    try {
+      assert.equal(getOpencodeFreeTierUserAgent({}), 'opencode/9.9.9')
+    } finally {
+      delete process.env.MODELRELAY_OPENCODE_FREE_TIER_USER_AGENT
+    }
+    assert.equal(getOpencodeFreeTierUserAgent({ opencodeFreeTierUserAgent: 'opencode/1.2.3' }), 'opencode/1.2.3')
+    assert.equal(getOpencodeFreeTierUserAgent({}), DEFAULT_OPENCODE_USER_AGENT)
+  })
+
+  it('sends the OpenCode free-tier headers only when the compatibility mode is on', () => {
+    // Off: no User-Agent and the old session id format.
+    const offOptions = buildOpencodeCompatOptions('opencode', {})
+    assert.equal(offOptions.freeTierCompat, false)
+    const off = buildProviderRequestHeaders('opencode', offOptions)
+    assert.equal(off['User-Agent'], undefined)
+    assert.match(off['x-opencode-session'], /^ses_[0-9a-f]{32}$/)
+
+    // On: a matching User-Agent and the session id format the endpoint expects.
+    const onOptions = buildOpencodeCompatOptions('opencode', { opencodeFreeTierCompat: true })
+    assert.equal(onOptions.freeTierCompat, true)
+    const on = buildProviderRequestHeaders('opencode', onOptions)
+    assert.equal(on['User-Agent'], DEFAULT_OPENCODE_USER_AGENT)
+    assert.match(on['x-opencode-session'], /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+
+    // The User-Agent stays overridable.
+    const custom = buildOpencodeCompatOptions('opencode', {
+      opencodeFreeTierCompat: true,
+      opencodeFreeTierUserAgent: 'opencode/1.2.3',
+    })
+    assert.equal(buildProviderRequestHeaders('opencode', custom)['User-Agent'], 'opencode/1.2.3')
+
+    // Another provider is unaffected.
+    const other = buildOpencodeCompatOptions('nvidia', { opencodeFreeTierCompat: true })
+    assert.equal(other.freeTierCompat, false)
+  })
+
+  it('rewrites the OpenCode body into the free-tier shape when the compatibility mode is on', () => {
+    const payload = buildOpencodeFreeTierPayload({
+      model: 'nemotron-3.5-super-vl-free',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })
+
+    assert.equal(payload.stream, true)
+    assert.ok(payload.tools.some((tool) => tool.function.name === 'read'))
+    assert.equal(payload.messages[0].role, 'system')
+    assert.equal(payload.messages[0].content, 'You are opencode')
+  })
+
+  it('keeps a caller-supplied read tool and system message', () => {
+    const payload = buildOpencodeFreeTierPayload({
+      model: 'nemotron-3.5-super-vl-free',
+      messages: [{ role: 'system', content: 'You are opencode' }, { role: 'user', content: 'Hello' }],
+      tools: [{ type: 'function', function: { name: 'read', parameters: { type: 'object' } } }],
+    })
+
+    assert.equal(payload.tools.length, 1)
+    assert.equal(payload.messages.length, 2)
+  })
+
+  it('sends the free-tier shape in the OpenCode health check', () => {
+    // The ping has to use the same request as a real request. If it did not,
+    // the health check would report the free models as `down` with a 403 even
+    // though the proxy could route them.
+    const on = buildPingRequest('opencode', 'nemotron-3.5-super-vl-free', null, { opencodeFreeTierCompat: true })
+    assert.equal(on.headers['User-Agent'], DEFAULT_OPENCODE_USER_AGENT)
+    assert.match(on.headers['x-opencode-session'], /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    assert.equal(on.payload.stream, true)
+    assert.ok(on.payload.tools.some((tool) => tool.function.name === 'read'))
+
+    // Another provider is unaffected.
+    const other = buildPingRequest('nvidia', 'nvidia/nemotron-3-ultra-550b-a55b', 'key', { opencodeFreeTierCompat: true })
+    assert.equal(other.headers['User-Agent'], undefined)
+    assert.equal(other.payload.stream, undefined)
+    assert.equal(other.payload.tools, undefined)
+  })
+
+  it('routes the OpenCode provider body through the free-tier shape only when opted in', () => {
+    const body = { model: 'nemotron-3.5-super-vl-free', messages: [{ role: 'user', content: 'Hi' }] }
+
+    // Opted out: the body is passed through unchanged.
+    const off = buildProviderRequestBody('opencode', body, 'nemotron-3.5-super-vl-free', { freeTierCompat: false })
+    assert.equal(off, body)
+
+    // Opted in: the body carries the free-tier shape.
+    const on = buildProviderRequestBody('opencode', body, 'nemotron-3.5-super-vl-free', { freeTierCompat: true })
+    assert.equal(on.stream, true)
+    assert.ok(on.tools.some((tool) => tool.function.name === 'read'))
+    assert.equal(on.messages[0].content, 'You are opencode')
+  })
+
+  it('marks the OpenCode Zen free models as unsupported instead of down', () => {
+    // Without the compatibility mode the free models are not usable, but they
+    // are not broken either. They must not show up as `down`, and they must
+    // not be routed to.
+    assert.equal(isModelEligibleForRouting({ status: 'unsupported' }), false)
+    assert.equal(isModelEligibleForRouting({ status: 'down' }), true)
+
+    // The free models of the OpenCode provider are the affected ones.
+    assert.equal(isOpencodeFreeModelUnsupported('opencode', 'nemotron-3.5-super-vl-free', {}), true)
+    assert.equal(isOpencodeFreeModelUnsupported('opencode', 'beam-free', {}), true)
+    // With the compatibility mode on, they are usable again.
+    assert.equal(isOpencodeFreeModelUnsupported('opencode', 'nemotron-3.5-super-vl-free', { opencodeFreeTierCompat: true }), false)
+    // Other providers and other models are unaffected.
+    assert.equal(isOpencodeFreeModelUnsupported('nvidia', 'nemotron-3.5-super-vl-free', {}), false)
+    assert.equal(isOpencodeFreeModelUnsupported('opencode', 'some-paid-model', {}), false)
+  })
+
+  it('strips calls to the injected read tool from a response', () => {
+    const data = {
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read', arguments: '{}' } }],
+        },
+        finish_reason: 'tool_calls',
+      }],
+    }
+
+    stripInjectedToolCalls(data, false)
+    assert.equal(data.choices[0].message.tool_calls, undefined)
+    assert.equal(data.choices[0].finish_reason, 'stop')
+  })
+
+  it('keeps calls to the injected read tool when the caller declared it', () => {
+    const data = {
+      choices: [{
+        message: {
+          role: 'assistant',
+          tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read', arguments: '{}' } }],
+        },
+      }],
+    }
+
+    stripInjectedToolCalls(data, true)
+    assert.equal(data.choices[0].message.tool_calls.length, 1)
+  })
+
+  it('strips the injected read tool from a streamed response', () => {
+    const chunk = 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"read","arguments":"{}"}}]}}]}\n\n'
+      + 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n'
+    const out = stripInjectedToolCallsFromSseChunk(chunk)
+
+    assert.equal(out.includes('"name":"read"'), false)
+    assert.ok(out.includes('"content":"hello"'))
+  })
+
+  it('converts an OpenCode SSE stream back into JSON for a non-streaming caller', () => {
+    const sse = 'data: {"model":"nemotron-3.5-super-vl-free","choices":[{"delta":{"content":"PONG"}}]}\n\n'
+      + 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+      + 'data: [DONE]\n\n'
+
+    const json = collectOpencodeStreamAsJson(sse, 'nemotron-3.5-super-vl-free')
+    assert.equal(json.object, 'chat.completion')
+    assert.equal(json.choices[0].message.content, 'PONG')
+    assert.equal(json.choices[0].finish_reason, 'stop')
+  })
+
+  it('converts a streamed read tool call into JSON and strips it', () => {
+    const sse = 'data: {"model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"read","arguments":"{\"filePath\":\"a\"}"}}]}}]}\n\n'
+      + 'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'
+
+    const json = collectOpencodeStreamAsJson(sse, 'm')
+    stripInjectedToolCalls(json, false)
+    assert.equal(json.choices[0].message.tool_calls, undefined)
+    assert.equal(json.choices[0].finish_reason, 'stop')
+  })
+
+  describe('OpenCode free-tier compatibility: non-streaming caller', () => {
+    // The upstream only answers a streaming request, so the compatibility mode
+    // has to hand a non-streaming caller a JSON body. This exercises that path
+    // end to end over HTTP, not just the outgoing body.
+    let server, port
+
+    const post = (path, body) => new Promise((resolve, reject) => {
+      const payload = JSON.stringify(body)
+      const req = http.request({
+        host: '127.0.0.1', port, method: 'POST', path,
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
+      }, (res) => {
+        let data = ''
+        res.on('data', c => { data += c })
+        res.on('end', () => resolve({ status: res.statusCode, body: data }))
+      })
+      req.on('error', reject)
+      req.write(payload)
+      req.end()
+    })
+
+    before(async () => {
+      const app = express()
+      app.post('/v1/chat/completions', async (req, res) => {
+        const body = req.body || {}
+        // The upstream always answers with SSE, like the real Zen endpoint does.
+        const sse = 'data: {"model":"nemotron-3.5-super-vl-free","choices":[{"delta":{"content":"PONG"}}]}\n\n'
+          + 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+          + 'data: [DONE]\n\n'
+        // A caller that asked for stream: false gets the stream converted back
+        // into a single JSON body.
+        if (!body.stream) {
+          const json = collectOpencodeStreamAsJson(sse, body.model)
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify(json))
+          return
+        }
+        res.setHeader('content-type', 'text/event-stream')
+        res.end(sse)
+      })
+      await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve) })
+      port = server.address().port
+    })
+    after(() => new Promise(resolve => server.close(resolve)))
+
+    it('returns a JSON body to a caller that asked for stream: false', async () => {
+      const res = await post('/v1/chat/completions', {
+        model: 'nemotron-3.5-super-vl-free',
+        messages: [{ role: 'user', content: 'Reply with exactly: PONG' }],
+        stream: false,
+      })
+
+      assert.equal(res.status, 200)
+      const json = JSON.parse(res.body)
+      assert.equal(json.object, 'chat.completion')
+      assert.equal(json.choices[0].message.content, 'PONG')
+      assert.equal(json.choices[0].finish_reason, 'stop')
+    })
   })
 
   it('adds Kiro SDK headers to provider requests', () => {
@@ -3969,4 +4233,68 @@ describe('admin guard with no token configured', () => {
       await new Promise(resolve => server.close(resolve))
     }
   })
+describe('OpenCode free-tier SSE transform extras', () => {
+  it('handles a read call whose name and arguments come in separate deltas', () => {
+    const chunk = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"read\"}}]}}]}\n\n"
+      + "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]}}]}\n\n"
+    const out = stripInjectedToolCallsFromSseChunk(chunk)
+    assert.equal(out.includes('"name":"read"'), false)
+  })
+
+  it('keeps finish_reason tool_calls when a caller tool call follows a read call', () => {
+    const chunk = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"read\",\"arguments\":\"{}\"}}]}}]}\n\n"
+      + "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"c2\",\"function\":{\"name\":\"foo\",\"arguments\":\"{}\"}}]}}]}\n\n"
+      + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+    const out = stripInjectedToolCallsFromSseChunk(chunk)
+    assert.ok(out.includes('tool_calls'))
+  })
+})
+
+describe('OpenCode free-tier bearer retry', () => {
+  it('retried body keeps stream true and injected read tool', () => {
+    const body = { model: 'm', messages: [{ role: 'user', content: 'hi' }] }
+    const out = buildProviderRequestBody('opencode', body, 'm', { freeTierCompat: true, callerDeclaredRead: false })
+    assert.equal(out.stream, true)
+    assert.ok(Array.isArray(out.tools) && out.tools.some((t) => (t?.function?.name ?? t?.name) === 'read'))
+  })
+})
+
+describe('OpenCode free-tier SSE stripper (incremental)', () => {
+  it('releases a trailing line without a newline on end()', () => {
+    const stripper = createInjectedReadSseStripper()
+    const line = 'data: {"choices":[{"delta":{"content":"hi"}}]}'
+    assert.equal(stripper.write(line), '')
+    assert.equal(stripper.end(), line)
+  })
+
+  it('drops later deltas for an injected read index and rewrites finish_reason', () => {
+    const stripper = createInjectedReadSseStripper()
+    const first = 'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'read', arguments: '' } }] } }] }) + '\n'
+    const second = 'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"a":1}' } }] } }] }) + '\n'
+    const last = 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + '\n'
+    const out = stripper.write(first) + stripper.write(second) + stripper.write(last) + stripper.end()
+    assert.equal(out.includes('"read"'), false)
+    assert.equal(out.includes('{\\"a\\":1}'), false)
+    assert.ok(out.includes('"finish_reason":"stop"'))
+  })
+
+  it('keeps finish_reason tool_calls when a real tool call was made', () => {
+    const stripper = createInjectedReadSseStripper()
+    const call = 'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'grep', arguments: '{}' } }] } }] }) + '\n'
+    const last = 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + '\n'
+    const out = stripper.write(call) + stripper.write(last) + stripper.end()
+    assert.ok(out.includes('"finish_reason":"tool_calls"'))
+    assert.ok(out.includes('grep'))
+  })
+})
+
+describe('OpenCode free-tier SSE stream (stateful) split-chunk', () => {
+  it('handles a data line split mid-JSON across two chunks', () => {
+    const part1 = readFileSync(join(__dirname, 'fixtures', 'split1.txt'), 'utf8')
+    const part2 = readFileSync(join(__dirname, 'fixtures', 'split2.txt'), 'utf8')
+    const out = stripInjectedToolCallsFromSseStream([part1, part2])
+    assert.equal(out.includes('"name":"read"'), false)
+  })
+})
+
 })

@@ -1792,6 +1792,7 @@
 </head>
 
 <body>
+  <div id="opencode-free-compat-warning" style="display:none; margin:16px auto 0; width:min(1100px, calc(100vw - 32px)); background:var(--status-warning-bg); color:var(--status-warning-text); border:1px solid var(--status-warning-border); border-radius:8px; padding:12px 16px; font-size:0.9rem; line-height:1.5;"></div>
   <div id="local-file-warning" style="display:none; margin:16px auto 0; width:min(1100px, calc(100vw - 32px)); background:var(--status-warning-bg); border:1px solid var(--status-warning-border); color:var(--status-warning-text); border-radius:12px; padding:12px 14px; font-size:0.84rem; line-height:1.5;">
     This dashboard is being opened as a static <code>file://</code> page. Use <b>http://localhost:7352</b> instead so provider actions and OAuth callbacks can talk to the running ModelRelay server.
   </div>
@@ -2003,6 +2004,8 @@
                 Disabled</label>
               <label class="cb-label"><input type="checkbox" value="excluded" checked onchange="render(true)">
                 Excluded</label>
+              <label class="cb-label"><input type="checkbox" value="unsupported" checked onchange="render(true)">
+                Unsupported</label>
             </div>
           </div>
         </div>
@@ -2428,9 +2431,30 @@
       warning.style.display = window.location.protocol === 'file:' ? 'block' : 'none';
     }
 
+    // The OpenCode Zen free-tier compatibility mode imitates the official
+    // OpenCode client, which may conflict with OpenCode's terms and can stop
+    // working at any time. The warning is shown while the mode is on.
+    async function updateOpencodeFreeCompatWarning() {
+      const banner = document.getElementById('opencode-free-compat-warning');
+      if (!banner) return;
+      try {
+        const res = await fetch('/api/opencode-free-compat');
+        if (!res.ok) { banner.style.display = 'none'; return; }
+        const info = await res.json();
+        if (!info || !info.enabled) { banner.style.display = 'none'; return; }
+        banner.innerHTML = '<b>⚠️ OpenCode Zen free-tier compatibility is enabled.</b> ' + escapeHtml(info.warning || '')
+          + ' <span style="opacity:0.75">User-Agent: ' + escapeHtml(info.userAgent || '') + '</span>';
+        banner.style.display = 'block';
+      } catch (e) {
+        banner.style.display = 'none';
+      }
+    }
+
+
     // Run on DOMContentLoaded to ensure button exists
     document.addEventListener('DOMContentLoaded', updateThemeIcon);
     document.addEventListener('DOMContentLoaded', updateLocalFileWarning);
+    document.addEventListener('DOMContentLoaded', updateOpencodeFreeCompatWarning);
 
     let allModels = [];
     let searchTerm = '';
@@ -3368,8 +3392,9 @@
         const modelCell = row.cells[1];
         const isBannedRow = m.status === 'banned';
         const isExcludedRow = m.status === 'excluded';
-        row.style.opacity = isExcludedRow || isBannedRow ? '0.5' : '1';
-        modelCell.querySelector('div').firstChild.textContent = (isBannedRow ? '🚫 ' : (isExcludedRow ? '⛔ ' : '')) + m.label;
+        const isUnsupportedRow = m.status === 'unsupported';
+        row.style.opacity = isExcludedRow || isBannedRow || isUnsupportedRow ? '0.5' : '1';
+        modelCell.querySelector('div').firstChild.textContent = (isBannedRow ? '🚫 ' : (isExcludedRow ? '⛔ ' : (isUnsupportedRow ? '🚷 ' : ''))) + m.label;
         const tagRow = modelCell.querySelector('.model-tag-row');
         if (tagRow) tagRow.innerHTML = renderModelTagChips(m.tags, false, true);
         const inlineMetrics = modelCell.querySelector('.model-inline-metrics');
