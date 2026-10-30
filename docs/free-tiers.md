@@ -13,7 +13,7 @@ What free tiers do in practice, measured against real providers in October 2026.
 |---|---|
 | OpenRouter | Free models are limited to 20 requests per minute, and 50 per day until you have bought $10 of credits in total (all time); at $10 or more the daily limit is 1,000. The limit is per account, not per key, so a new key does not reset it. A key spending limit of $0 still allows `:free` models. See [OpenRouter's limits](https://openrouter.ai/docs/api-reference/limits). |
 | OpenCode Zen | The free models answer `403 FreeTierError` ("the free tier can only be used from within OpenCode") for any other client. By default modelrelay does not imitate the OpenCode client, so these models are listed as `unsupported` and are not routed to. See [OpenCode Zen free models](#opencode-zen-free-models). |
-| Ollama Cloud | The free plan answers `402` for the premium models. |
+| Ollama Cloud | The free plan answers `402` for the premium models. From November 9, 2026 several more models need credits, see [Ollama Cloud changes](#ollama-cloud-changes-on-november-9-2026). |
 | Cerebras | Answers `402` for models outside the free allowance. |
 | Google AI | Free quotas are very small, or zero for some models. |
 | Requesty | 200 requests per day. Most of its free models may train on prompts. |
@@ -94,6 +94,21 @@ A missing key is therefore harmless, but a *wrong* key is not: it fails with a s
 rather than being ignored. modelrelay sends no `Authorization` header when no OpenCode key is
 configured, which is the correct behavior for the free tier. A key is still required for the paid
 Zen models.
+
+## Ollama Cloud changes on November 9, 2026
+
+<!-- TODO(2026-11-09): remove this section and the link in the Ollama Cloud table row once the change is live and the model list has been re-checked. -->
+
+Ollama has announced that, starting November 9, 2026, Free plan accounts switch to pay as you go. Credits are required for these cloud models:
+
+- `gemma4:31b`
+- `gpt-oss:120b`
+- `gpt-oss:20b`
+- `nemotron-3-super`
+- `nemotron-3-ultra`
+- `nemotron-3-nano:30b`
+
+After that date, expect `402` from these models on a free account. modelrelay treats `402` as "try another model" (see [Errors that mean "try another model"](#errors-that-mean-try-another-model)), so requests fall through to the next candidate, but the models stay in the list until Ollama stops advertising them. Running models locally is not affected and stays free: point the Ollama endpoint at a local host (see [Configuration](configuration.md)) and, for example, run `ollama pull gpt-oss:20b`.
 
 ## Model ids go stale
 
