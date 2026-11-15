@@ -5,6 +5,10 @@ nav_order: 11
 
 # Troubleshooting
 
+## `/v1` returns `401 invalid_api_key`
+
+`MODELRELAY_PROXY_TOKEN` is set, so the proxy requires that token as the API key. Send it as `Authorization: Bearer <token>` and use the same value wherever the client asks for an API key. Unset the variable (and restart) to make the proxy open again. Check the startup banner: it says when the proxy is protected. See [Security](security.md#proxy-token).
+
 ## Clicking the update button or running `modelrelay` won't perform an update
 
 To trigger a manual npm update and restart the service, run:

@@ -13,5 +13,6 @@ services:
       # Recommended if the dashboard is reachable beyond this machine: require sign-in for the admin API.
       # - MODELRELAY_ADMIN_TOKEN=change-me-to-16-or-more-random-characters
       # - MODELRELAY_ALLOWED_HOSTS=modelrelay.example.com   # only if you open the dashboard through a host name
+      # - MODELRELAY_PROXY_TOKEN=change-me-to-16-or-more-random-characters   # require an API key on /v1
 volumes:
   modelrelay_config:

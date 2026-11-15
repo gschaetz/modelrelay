@@ -26,6 +26,7 @@ nav_order: 10
 
 - Security and server settings (see [Security](security.md)):
   - `MODELRELAY_ADMIN_TOKEN` (require sign-in for the admin API and dashboard)
+  - `MODELRELAY_PROXY_TOKEN` (require `Authorization: Bearer <token>` on the `/v1` proxy; unset leaves it open)
   - `MODELRELAY_ALLOWED_HOSTS` (extra host names the admin API answers to; `*` disables the check)
   - `MODELRELAY_ALLOWED_ORIGINS` (extra browser origins, for reverse proxies that rewrite `Host`)
   - `MODELRELAY_HOST` (interface to listen on; same as `--host`)

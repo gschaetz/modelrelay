@@ -46,7 +46,7 @@ Once started, modelrelay is accessible at `http://localhost:7352/`.
 Router endpoint:
 
 - Base URL: `http://127.0.0.1:7352/v1`
-- API key: any string
+- API key: any string — unless the proxy is protected with `MODELRELAY_PROXY_TOKEN`, in which case send that value (see [Security](https://schaetzkc.com/modelrelay/security/#proxy-token))
 - Model: `auto-fastest` (router picks actual backend)
 
 ## 🚀 Install via Docker

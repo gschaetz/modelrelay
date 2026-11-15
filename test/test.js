@@ -41,6 +41,7 @@ import { classifyFailureStatus, createTelemetryStore, getReliability, normalizeT
 import http from 'node:http'
 import express from 'express'
 import { SESSION_COOKIE, buildClearedCookie, buildSessionCookie, createAdminAuth, createAdminMiddleware, createAuthRoutes, evaluateRequestOrigin, isAllowedHost, parseAllowedHosts, parseAllowedOrigins, parseCookies, parseHostHeader } from '../lib/admin-guard.js'
+import { PROXY_TOKEN_ENV, createProxyMiddleware, getProxyToken } from '../lib/proxy-guard.js'
 import '../public/model-search.js'
 import { capLength, isSafeObjectKey, stripTrailingSuffixes, trimEndWhile, trimStartWhile, trimWhile } from '../lib/text.js'
 import { OPENCLAW_ROUTING_PRESETS, applyOpenClawConfig, buildOpenClawProviderConfig } from '../lib/onboard.js'
@@ -4297,4 +4298,111 @@ describe('OpenCode free-tier SSE stream (stateful) split-chunk', () => {
   })
 })
 
+})
+
+describe('proxy token: end to end over HTTP', () => {
+  const TOKEN = 'proxy-token-for-tests-0123456789'
+
+  const startApp = async (proxyToken) => {
+    const app = express()
+    app.use('/v1', (req, res, next) => {
+      res.header('Access-Control-Allow-Origin', '*')
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+      if (req.method === 'OPTIONS') return res.sendStatus(204)
+      next()
+    })
+    app.use('/v1', createProxyMiddleware({ token: proxyToken }))
+    app.use(express.json())
+    app.get('/v1/models', (req, res) => res.json({ object: 'list', data: [] }))
+    app.post('/v1/chat/completions', (req, res) => res.json({ ok: true, model: req.body?.model ?? null }))
+    app.get('/public', (req, res) => res.json({ ok: true }))
+    const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) })
+    const port = server.address().port
+    const call = (options = {}) => new Promise((resolve, reject) => {
+      const body = options.body === undefined ? undefined : JSON.stringify(options.body)
+      const req = http.request({ host: '127.0.0.1', port, method: options.method || 'GET', path: options.path || '/v1/models',
+        headers: { host: `localhost:${port}`, ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}), ...(options.headers || {}) } }, (res) => {
+        let data = ''
+        res.on('data', c => { data += c })
+        res.on('end', () => { let json = null; try { json = JSON.parse(data) } catch { /* not json */ } resolve({ status: res.statusCode, headers: res.headers, json }) })
+      })
+      req.on('error', reject)
+      if (body) req.write(body)
+      req.end()
+    })
+    return { call, close: () => new Promise(resolve => server.close(resolve)) }
+  }
+
+  it('leaves the proxy open when no token is configured', async () => {
+    const app = await startApp('')
+    try {
+      assert.equal((await app.call()).status, 200)
+      assert.equal((await app.call({ path: '/public' })).status, 200)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('rejects a request without an Authorization header', async () => {
+    const app = await startApp(TOKEN)
+    try {
+      const res = await app.call()
+      assert.equal(res.status, 401)
+      assert.deepEqual(res.json, { error: { message: 'Invalid API key', type: 'invalid_request_error', code: 'invalid_api_key' } })
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('rejects a wrong token and a non-Bearer scheme', async () => {
+    const app = await startApp(TOKEN)
+    try {
+      assert.equal((await app.call({ headers: { authorization: 'Bearer wrong-token' } })).status, 401)
+      assert.equal((await app.call({ headers: { authorization: `Basic ${TOKEN}` } })).status, 401)
+      assert.equal((await app.call({ headers: { authorization: TOKEN } })).status, 401)
+      assert.equal((await app.call({ headers: { authorization: `Bearer ${TOKEN}x` } })).status, 401)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('accepts the configured bearer token on every /v1 route', async () => {
+    const app = await startApp(TOKEN)
+    try {
+      const models = await app.call({ headers: { authorization: `Bearer ${TOKEN}` } })
+      assert.equal(models.status, 200)
+      assert.deepEqual(models.json, { object: 'list', data: [] })
+      const chat = await app.call({ method: 'POST', path: '/v1/chat/completions', headers: { authorization: `bearer ${TOKEN}` }, body: { model: 'auto-fastest' } })
+      assert.equal(chat.status, 200)
+      assert.equal(chat.json.model, 'auto-fastest')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('keeps the CORS preflight open', async () => {
+    const app = await startApp(TOKEN)
+    try {
+      const res = await app.call({ method: 'OPTIONS', headers: { origin: 'http://browser.example', 'access-control-request-method': 'POST' } })
+      assert.equal(res.status, 204)
+      assert.equal(res.headers['access-control-allow-origin'], '*')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('does not touch routes outside /v1', async () => {
+    const app = await startApp(TOKEN)
+    try {
+      assert.equal((await app.call({ path: '/public' })).status, 200)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('reads the token from the environment, trimmed, and treats blank as off', () => {
+    assert.equal(getProxyToken({}), '')
+    assert.equal(getProxyToken({ [PROXY_TOKEN_ENV]: '   ' }), '')
+    assert.equal(getProxyToken({ [PROXY_TOKEN_ENV]: '  secret-token-value  ' }), 'secret-token-value')
+  })
 })

@@ -9,7 +9,7 @@ modelrelay has two kinds of endpoints with different jobs, and they are protecte
 
 | Endpoint | What it is | Protection |
 |---|---|---|
-| `/v1/*` | The OpenAI-compatible proxy your tools talk to | Open by design (any `Authorization` value is accepted and ignored). CORS is allowed so browser-based clients work. |
+| `/v1/*` | The OpenAI-compatible proxy your tools talk to | Open by default; an optional bearer token (`MODELRELAY_PROXY_TOKEN`) requires callers to send it. CORS is allowed so browser-based clients work. |
 | `/api/*` | The admin API behind the dashboard: settings, provider keys, tags, logs | Host and origin checks, plus an optional admin token. **No CORS.** |
 
 The admin API can read and change your provider API keys, so it is the part to protect. Anyone who can use `/v1` can spend your free-tier quota, but only the admin API can see or redirect your keys.
@@ -41,7 +41,24 @@ modelrelay
   ```
 - After 10 wrong guesses a client is locked out for 15 minutes.
 - Use at least 16 random characters. The router warns at startup if the token is shorter.
-- The token is read from the environment only; it is never written to the config file. The `/v1` proxy is not affected.
+- The token is read from the environment only; it is never written to the config file. The `/v1` proxy is not affected by the admin token; see [Proxy token](#proxy-token).
+
+## Proxy token
+
+Anyone who can reach `/v1` can spend the quota of the providers you configured. On a laptop that is fine; on a VPS, a shared host or behind a public reverse proxy, set a proxy token:
+
+```bash
+export MODELRELAY_PROXY_TOKEN="$(openssl rand -hex 24)"
+modelrelay
+```
+
+- Every `/v1` request must then send it as the API key: `Authorization: Bearer <token>`. Clients that already have an "API key" field use it unchanged — for modelrelay the value stops being ignored.
+- Without the header, or with a wrong one, the proxy answers `401` with an OpenAI-shaped error (`invalid_api_key`). Comparison is constant-time.
+- **Unset means open**, exactly as before, so existing local setups keep working.
+- `OPTIONS` preflights are still answered without the token, because a browser must be able to ask before sending `Authorization`.
+- The token is read from the environment only and never written to the config file. It is independent of `MODELRELAY_ADMIN_TOKEN`: the admin token protects the dashboard, this one protects the proxy.
+- Use at least 16 random characters. The router warns at startup if the token is shorter. Changing it requires a restart.
+- The startup banner shows the proxy as protected and tells clients which API key to use.
 
 ## Host names, reverse proxies and Docker
 
@@ -63,8 +80,8 @@ export MODELRELAY_ALLOWED_ORIGINS="https://modelrelay.example.com"
 | Local use at `http://localhost:7352` | Nothing. |
 | LAN access by IP address (`http://192.168.1.20:7352`) | Nothing for the checks. Set a token, because the dashboard is reachable by every device on the network. |
 | LAN access by machine name (`http://mybox.local:7352`) | Nothing (the machine's own name is allowed). |
-| Docker Compose with a published port | Nothing for `localhost` or IP access. Add `MODELRELAY_ADMIN_TOKEN` to the service's environment. |
-| Behind a reverse proxy or Kubernetes ingress | Set `MODELRELAY_ALLOWED_HOSTS` (and `MODELRELAY_ALLOWED_ORIGINS` if the proxy changes `Host`), and a token. The `/v1` traffic from other services is not affected. |
+| Docker Compose with a published port | Nothing for `localhost` or IP access. Add `MODELRELAY_ADMIN_TOKEN` to the service's environment, and `MODELRELAY_PROXY_TOKEN` if other hosts can reach the published port. |
+| Behind a reverse proxy or Kubernetes ingress | Set `MODELRELAY_ALLOWED_HOSTS` (and `MODELRELAY_ALLOWED_ORIGINS` if the proxy changes `Host`), and an admin token. If the proxy is publicly reachable, also set `MODELRELAY_PROXY_TOKEN` so `/v1` callers must send it. |
 
 Health checks that only open a TCP connection are not affected by any of this.
 
@@ -90,7 +107,7 @@ The default has **not** been changed, because making loopback the default would 
 | The Docker image | Would have to set `MODELRELAY_HOST=0.0.0.0` for published ports to work. |
 | Kubernetes | Same as Docker. |
 
-Recommendation: if everything runs on one machine, use `--host 127.0.0.1`. Otherwise keep the default and set an admin token.
+Recommendation: if everything runs on one machine, use `--host 127.0.0.1`. Otherwise keep the default, set an admin token, and set a proxy token if `/v1` is reachable by people you do not trust.
 
 ## Reporting a problem
 

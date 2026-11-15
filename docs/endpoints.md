@@ -5,6 +5,10 @@ nav_order: 5
 
 # Endpoints
 
+## Authentication
+
+`/v1` is open by default: any `Authorization` value is accepted and ignored. If the router is reachable by other people, set `MODELRELAY_PROXY_TOKEN`; callers must then send `Authorization: Bearer <token>`, which is the value they already put in their "API key" field. A missing or wrong credential gets `401` with an OpenAI-shaped `invalid_api_key` error. CORS preflights stay open. See [Security](security.md#proxy-token).
+
 ## `/v1/chat/completions`
 
 `POST /v1/chat/completions` is an OpenAI-compatible chat completions endpoint.
